@@ -1,0 +1,13 @@
+# Runtime state
+.bb/
+
+# Apfel binary
+apfel
+
+# OS files
+.DS_Store
+
+# Editor files
+*.swp
+*.swo
+*~
