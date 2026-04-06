@@ -25,9 +25,45 @@ Add brief transitions between sections if needed. Fix any
 inconsistencies. Do not add new content. Output only the
 final document."
 
+# Default planner is apfel
+PLAN_MODEL="${PLAN_MODEL:-apfel}"
+
 # Generate plan from goal using apfel
 # Usage: generate_plan "<goal>"
 generate_plan() {
 	local goal="$1"
-	apfel -s "$SYS_PLAN" -- "$goal" 2>/dev/null || echo ""
+
+	if [[ "$PLAN_MODEL" == "apfel" ]]; then
+		apfel -s "$SYS_PLAN" -- "$goal" 2>/dev/null || echo ""
+	else
+		# Future extension point: external model support via PLAN_MODEL
+		echo "ERROR: PLAN_MODEL must be 'apfel' for now" >&2
+		echo ""
+		return 1
+	fi
+}
+
+# Inject vipune search results into context
+# Usage: vipune_search "<query>"
+# Returns: search results or empty string if vipune not available
+vipune_search() {
+	local query="$1"
+
+	if ! command -v vipune >/dev/null 2>&1; then
+		echo ""
+		return 0
+	fi
+
+	local results
+	results="$(vipune search "$query" 2>/dev/null)" || {
+		echo ""
+		return 0
+	}
+
+	if [[ -z "$results" ]]; then
+		echo ""
+		return 0
+	fi
+
+	printf '\n\n=== VIPUNE SEARCH RESULTS ===\n%s\n============================\n' "$results"
 }

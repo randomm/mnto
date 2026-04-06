@@ -2,6 +2,18 @@
 # Blackboard operations for mnto
 set -euo pipefail
 
+# ANSI terminal colours (used in harness.bash via source)
+# shellcheck disable=SC2034
+readonly C_RESET='\033[0m'
+# shellcheck disable=SC2034
+readonly C_RED='\033[0;31m'
+# shellcheck disable=SC2034
+readonly C_GREEN='\033[0;32m'
+# shellcheck disable=SC2034
+readonly C_YELLOW='\033[0;33m'
+# shellcheck disable=SC2034
+readonly C_BLUE='\033[0;34m'
+
 # Validate task ID format (security)
 validate_id() {
 	local id="$1"
@@ -199,14 +211,13 @@ parse_plan() {
 
 	mkdir -p "$bb_dir"
 
-	# Write plan file
-	echo "$plan" >"$plan_file"
-
-	# Validate plan format before parsing
+	# Validate plan format before creating any files
 	if ! validate_plan_format "$plan"; then
-		rm -rf "$bb_dir"
 		return 1
 	fi
+
+	# Write plan file
+	echo "$plan" >"$plan_file"
 
 	# Initialize status file with waiting state
 	while IFS=' ' read -r id rest; do
@@ -216,4 +227,94 @@ parse_plan() {
 		echo "$id - 0"
 		mkdir -p "$bb_dir/$id"
 	done <"$plan_file" >"$status_file"
+}
+
+# Count subtasks by state
+# Usage: count_subtasks <tid>
+# Returns: "waiting draft checkpoint fail final" counts
+count_subtasks() {
+	local tid="$1"
+	if ! validate_id "$tid"; then
+		echo "0 0 0 0 0"
+		return 1
+	fi
+	local status_file="$BB_DIR/$tid/s"
+	if [[ ! -f "$status_file" ]]; then
+		echo "0 0 0 0 0"
+		return 0
+	fi
+
+	local w=0 d=0 c=0 fail=0
+	while IFS=' ' read -r _id state _retries; do
+		case "$state" in
+		-) ((w++)) ;;
+		d) ((d++)) ;;
+		c) ((c++)) ;;
+		f) ((fail++)) ;;
+		*) echo "WARNING: Unknown state '$state' in status file" >&2 ;;
+		esac
+	done <"$status_file"
+	echo "$w $d $c $fail"
+}
+
+# Get overall task status
+# Usage: get_task_status <tid>
+# Returns: running, waiting, done, or unknown
+get_task_status() {
+	local tid="$1"
+	if ! validate_id "$tid"; then
+		echo "unknown"
+		return 1
+	fi
+	local bb_dir="$BB_DIR/$tid"
+
+	# Check if output exists (task completed)
+	if [[ -f "$bb_dir/out" ]]; then
+		echo "done"
+		return 0
+	fi
+
+	# No output yet - derive status from subtask counts
+	local counts
+	counts="$(count_subtasks "$tid")"
+	read -r w d c fail _ <<<"$counts"
+
+	# If any waiting or in-progress (draft/checkpoint), task is running
+	if ((w > 0 || d > 0 || c > 0)); then
+		echo "running"
+		return 0
+	fi
+
+	# No waiting/in-progress subtasks but no output yet
+	if ((fail > 0)); then
+		# Some failed but not stitched yet
+		echo "waiting"
+		return 0
+	fi
+
+	echo "unknown"
+	return 0
+}
+
+# Get task goal snippet (first line, truncated)
+# Usage: get_goal_snippet <tid>
+# Returns: truncated goal text
+get_goal_snippet() {
+	local tid="$1"
+	if ! validate_id "$tid"; then
+		echo ""
+		return 1
+	fi
+	local goal_file="$BB_DIR/$tid/g"
+	if [[ ! -f "$goal_file" ]]; then
+		echo ""
+		return 0
+	fi
+	local goal
+	goal="$(head -1 "$goal_file")"
+	if [[ ${#goal} -gt 40 ]]; then
+		echo "${goal:0:40}..."
+	else
+		echo "$goal"
+	fi
 }
