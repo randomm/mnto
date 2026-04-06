@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # mnto — Minimalist task orchestrator
-# Usage: mnto "goal" | mnto --resume {tid} | mnto --list
+# Usage: mnto "goal" | mnto --resume {tid} | mnto --list | mnto --dry-run | mnto --plan-model {url} | mnto --vipune
 
 # SCRIPT_DIR can be overridden via env for testing
 SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
@@ -14,14 +14,25 @@ source "$SCRIPT_DIR/lib/blackboard.bash"
 source "$SCRIPT_DIR/lib/planner.bash"
 source "$SCRIPT_DIR/lib/harness.bash"
 
+# Global options
+DRY_RUN="${DRY_RUN:-false}"
+VIPUNE_ENABLED="${VIPUNE_ENABLED:-false}"
+PLAN_MODEL="${PLAN_MODEL:-apfel}"
+
 usage() {
 	cat <<EOF
-Usage: mnto "goal" | mnto --resume {tid} | mnto --list
+Usage: mnto "goal" | mnto [options]
 
 Commands:
-  mnto "goal"          Create new task and run planner
-  mnto --resume {tid}  Resume existing task
-  mnto --list          List all tasks
+  mnto "goal"           Create and run new task
+  mnto --resume {tid}   Resume existing task from last state
+  mnto --list           List tasks with goal snippets and status
+
+Options:
+  -h, --help            Show this help
+  --dry-run             Show prompts without calling apfel
+  --plan-model {url}    Use external model (curl to URL or command)
+  --vipune              Enable vipune semantic search integration
 EOF
 }
 
@@ -31,17 +42,44 @@ list_tasks() {
 		return 0
 	fi
 
+	# Enhanced list with goal snippet, subtask counts, and status
 	for task_dir in "$BB_DIR"/*/; do
 		if [[ -d "$task_dir" ]]; then
 			local tid
 			tid="$(basename "$task_dir")"
-			echo "$tid"
+
+			# Get goal snippet
+			local snippet
+			snippet="$(get_goal_snippet "$tid")"
+
+			# Get subtask counts
+			local counts
+			counts="$(count_subtasks "$tid")"
+			read -r w d c f <<<"$counts"
+
+			# Get overall task status
+			local status
+			status="$(get_task_status "$tid")"
+
+			# Format: {tid} {goal_snippet} {w|d|c|f} {status}
+			printf '%s %s %s/%s/%s/%s %s\n' "$tid" "$snippet" "$w" "$d" "$c" "$f" "$status"
 		fi
 	done
 }
 
 create_task() {
 	local goal="$1"
+
+	# Check for vipune integration
+	if [[ "$VIPUNE_ENABLED" == "true" ]]; then
+		# Search for relevant context
+		local vipune_context
+		vipune_context="$(vipune_search "$goal")"
+		if [[ -n "$vipune_context" ]]; then
+			# Prepend vipune results to goal
+			goal="$goal$vipune_context"
+		fi
+	fi
 
 	mkdir -p "$BB_DIR"
 
@@ -56,7 +94,7 @@ create_task() {
 	# Save goal
 	echo "$goal" >"$bb_dir/g"
 
-	# Generate plan using planner module
+	# Generate plan using planner module (respects PLAN_MODEL)
 	local plan
 	plan="$(generate_plan "$goal")"
 
@@ -88,7 +126,125 @@ resume_task() {
 		exit 1
 	fi
 
-	echo "Resuming task: $tid"
+	# Read current state and find next waiting subtask
+	local status_file="$bb_dir/s"
+	if [[ ! -f "$status_file" ]]; then
+		echo "ERROR: Task '$tid' has no status file" >&2
+		exit 1
+	fi
+
+	# Find first subtask that is not yet final
+	local next_subtask=""
+	while IFS=' ' read -r subtask_id state retries; do
+		if [[ "$state" != "f" ]]; then
+			next_subtask="$subtask_id"
+			break
+		fi
+	done <"$status_file"
+
+	if [[ -z "$next_subtask" ]]; then
+		# All done - just stitch
+		print_status "INFO" "All subtasks complete, stitching output"
+		if stitch_task "$tid"; then
+			print_status "PASS" "Task $tid completed (resumed)"
+		else
+			print_status "FAIL" "Failed to stitch task $tid"
+			exit 1
+		fi
+	else
+		# Resume from next subtask
+		print_status "INFO" "Resuming task $tid from subtask $next_subtask"
+
+		# Process remaining subtasks in loop
+		while [[ -n "$next_subtask" ]]; do
+			print_status "INFO" "Processing subtask $next_subtask"
+
+			# Assemble context for this subtask
+			if ! assemble_context "$tid" "$next_subtask"; then
+				echo "ERROR: Failed to assemble context for $next_subtask" >&2
+				exit 1
+			fi
+
+			# Draft
+			if ! draft_subtask "$tid" "$next_subtask"; then
+				echo "ERROR: Failed to draft $next_subtask" >&2
+				exit 1
+			fi
+
+			# Verify loop with retry
+			while true; do
+				if verify_subtask "$tid" "$next_subtask"; then
+					break
+				else
+					if ! handle_retry "$tid" "$next_subtask" 3; then
+						print_status "FAIL" "Subtask $next_subtask: max retries exceeded"
+						break
+					fi
+					if ! draft_subtask "$tid" "$next_subtask"; then
+						echo "ERROR: Failed to redraft $next_subtask" >&2
+						exit 1
+					fi
+				fi
+			done
+
+			# Find next waiting subtask
+			next_subtask="$(next_task "$tid")"
+			if [[ "$next_subtask" == "NULL" ]]; then
+				next_subtask=""
+			fi
+		done
+
+		# Stitch all final drafts
+		if ! stitch_task "$tid"; then
+			echo "ERROR: Failed to stitch task $tid" >&2
+			exit 1
+		fi
+		print_status "PASS" "Task $tid completed (resumed)"
+	fi
+
+	echo "Resumed task: $tid"
+}
+
+parse_options() {
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		-h | --help)
+			usage
+			exit 0
+			;;
+		--dry-run)
+			DRY_RUN="true"
+			shift
+			;;
+		--plan-model)
+			if [[ $# -lt 2 ]]; then
+				echo "ERROR: --plan-model requires a URL or command" >&2
+				exit 1
+			fi
+			PLAN_MODEL="$2"
+			shift 2
+			;;
+		--vipune)
+			VIPUNE_ENABLED="true"
+			shift
+			;;
+		--list | --resume)
+			# These are handled in main
+			break
+			;;
+		-*)
+			echo "ERROR: Unknown option: $1" >&2
+			usage
+			exit 1
+			;;
+		*)
+			break
+			;;
+		esac
+	done
+
+	# Return remaining args
+	echo "$@"
 }
 
 main() {
@@ -96,6 +252,9 @@ main() {
 		usage
 		exit 1
 	fi
+
+	# Parse global options first
+	eval set -- "$(parse_options "$@")"
 
 	case "$1" in
 	-h | --help)
@@ -106,14 +265,14 @@ main() {
 		list_tasks
 		;;
 	--resume)
-		if [[ $# -ne 2 ]]; then
+		if [[ $# -lt 2 ]] || [[ -z "$2" ]]; then
 			usage
 			exit 1
 		fi
 		resume_task "$2"
 		;;
 	*)
-		create_task "$@"
+		create_task "$1"
 		;;
 	esac
 }

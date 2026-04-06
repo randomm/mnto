@@ -2,6 +2,18 @@
 # Blackboard operations for mnto
 set -euo pipefail
 
+# ANSI terminal colours (used in harness.bash via source)
+# shellcheck disable=SC2034
+readonly C_RESET='\033[0m'
+# shellcheck disable=SC2034
+readonly C_RED='\033[0;31m'
+# shellcheck disable=SC2034
+readonly C_GREEN='\033[0;32m'
+# shellcheck disable=SC2034
+readonly C_YELLOW='\033[0;33m'
+# shellcheck disable=SC2034
+readonly C_BLUE='\033[0;34m'
+
 # Validate task ID format (security)
 validate_id() {
 	local id="$1"
@@ -216,4 +228,104 @@ parse_plan() {
 		echo "$id - 0"
 		mkdir -p "$bb_dir/$id"
 	done <"$plan_file" >"$status_file"
+}
+
+# Read full status file for a task
+# Usage: read_status_file <tid>
+# Returns: status file contents, or empty if not found
+read_status_file() {
+	local tid="$1"
+	if ! validate_id "$tid"; then
+		echo ""
+		return 1
+	fi
+	local status_file="$BB_DIR/$tid/s"
+	if [[ ! -f "$status_file" ]]; then
+		echo ""
+		return 0
+	fi
+	cat "$status_file"
+}
+
+# Count subtasks by state
+# Usage: count_subtasks <tid>
+# Returns: "waiting draft checkpoint fail final" counts
+count_subtasks() {
+	local tid="$1"
+	if ! validate_id "$tid"; then
+		echo "0 0 0 0 0"
+		return 1
+	fi
+	local status_file="$BB_DIR/$tid/s"
+	if [[ ! -f "$status_file" ]]; then
+		echo "0 0 0 0 0"
+		return 0
+	fi
+
+	local w=0 d=0 c=0 fail=0
+	while IFS=' ' read -r _id state _retries; do
+		case "$state" in
+		-) ((w++)) ;;
+		d) ((d++)) ;;
+		c) ((c++)) ;;
+		f) ((fail++)) ;;
+		*) echo "WARNING: Unknown state '$state' in status file" >&2 ;;
+		esac
+	done <"$status_file"
+	echo "$w $d $c $fail"
+}
+
+# Get overall task status
+# Usage: get_task_status <tid>
+# Returns: running, waiting, done, or unknown
+get_task_status() {
+	local tid="$1"
+	if ! validate_id "$tid"; then
+		echo "unknown"
+		return 1
+	fi
+	local bb_dir="$BB_DIR/$tid"
+
+	if [[ ! -f "$bb_dir/out" ]]; then
+		# No output yet - check status
+		if [[ ! -f "$bb_dir/s" ]]; then
+			echo "unknown"
+			return 0
+		fi
+		# Check if any subtasks are still pending
+		while IFS=' ' read -r _id state _retries; do
+			if [[ "$state" != "f" ]]; then
+				echo "running"
+				return 0
+			fi
+		done <"$bb_dir/s"
+		echo "waiting"
+		return 0
+	else
+		echo "done"
+		return 0
+	fi
+}
+
+# Get task goal snippet (first line, truncated)
+# Usage: get_goal_snippet <tid>
+# Returns: truncated goal text
+get_goal_snippet() {
+	local tid="$1"
+	if ! validate_id "$tid"; then
+		echo ""
+		return 1
+	fi
+	local goal_file="$BB_DIR/$tid/g"
+	if [[ ! -f "$goal_file" ]]; then
+		echo ""
+		return 0
+	fi
+	local goal
+	goal="$(head -1 "$goal_file")"
+	if [[ ${#goal} -gt 40 ]]; then
+		echo "${goal:0:40}..."
+	else
+		echo "$goal"
+	fi
 }

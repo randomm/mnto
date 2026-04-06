@@ -8,11 +8,30 @@ source "$(dirname "${BASH_SOURCE[0]}")/blackboard.bash"
 # shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/planner.bash"
 
+# Harness options (can be overridden)
+DRY_RUN="${DRY_RUN:-false}"
+VIPUNE_ENABLED="${VIPUNE_ENABLED:-false}"
+
+# Print colored status message
+# Usage: print_status "<state>" "<message>"
+print_status() {
+	local state="$1"
+	local message="$2"
+	case "$state" in
+	PASS) printf '%s✓ PASS%s %s\n' "$C_GREEN" "$C_RESET" "$message" ;;
+	RETRY) printf '%s⟳ RETRY%s %s\n' "$C_YELLOW" "$C_RESET" "$message" ;;
+	FAIL) printf '%s✗ FAIL%s %s\n' "$C_RED" "$C_RESET" "$message" ;;
+	INFO) printf '%s➤ INFO%s %s\n' "$C_BLUE" "$C_RESET" "$message" ;;
+	*) printf '%s\n' "$message" ;;
+	esac
+}
+
 # Assemble context for subtask draft
 # Usage: assemble_context <tid> <subtask_id>
 # Reads: .bb/{tid}/p (plan), .bb/{tid}/g (goal), .bb/{tid}/{prev_id}/f (previous final, optional)
 #        .bb/{tid}/{subtask_id}/c (critique, optional)
 # Writes: .bb/{tid}/{subtask_id}/ctx
+# Options: VIPUNE_ENABLED=true adds vipune search results
 assemble_context() {
 	local tid="$1"
 	local subtask_id="$2"
@@ -52,7 +71,7 @@ assemble_context() {
 		critique="$(cat "$bb_dir/$subtask_id/c")"
 	fi
 
-	# Concatenate: goal + plan line + previous output + critique
+	# Build context sections
 	{
 		echo "GOAL:"
 		echo "$goal"
@@ -69,6 +88,15 @@ assemble_context() {
 			echo "CRIT:"
 			echo "$critique"
 			echo ""
+		fi
+
+		# Inject vipune results if enabled
+		if [[ "$VIPUNE_ENABLED" == "true" ]]; then
+			local vipune_results
+			vipune_results="$(vipune_search "$goal")"
+			if [[ -n "$vipune_results" ]]; then
+				echo "$vipune_results"
+			fi
 		fi
 	} >"$tmp_ctx"
 
@@ -130,6 +158,7 @@ $spec"
 		local retries
 		retries="$(get_retries "$tid" "$subtask_id")"
 		set_status "$tid" "$subtask_id" "f" "$retries"
+		print_status "PASS" "Subtask $subtask_id verified"
 		return 0
 	else
 		# Extract reason from "FAIL: reason"
@@ -138,6 +167,7 @@ $spec"
 		local retries
 		retries="$(get_retries "$tid" "$subtask_id")"
 		set_status "$tid" "$subtask_id" "c" "$retries"
+		print_status "RETRY" "Subtask $subtask_id: $reason"
 		return 1
 	fi
 }
@@ -209,6 +239,7 @@ handle_retry() {
 # Reads: .bb/{tid}/{subtask_id}/ctx
 # Writes: .bb/{tid}/{subtask_id}/d
 # Updates status: {subtask_id} d 0
+# Options: DRY_RUN=true shows context without calling apfel
 draft_subtask() {
 	local tid="$1"
 	local subtask_id="$2"
@@ -232,6 +263,16 @@ draft_subtask() {
 	local ctx
 	ctx="$(cat "$ctx_file")"
 
+	# Dry-run mode: show context without calling apfel
+	if [[ "$DRY_RUN" == "true" ]]; then
+		echo "=== DRY RUN: Would send to apfel ===" >&2
+		echo "System: $SYS_DRAFT" >&2
+		echo "--- Context ---" >&2
+		echo "$ctx" >&2
+		echo "--- End Context ---" >&2
+		return 0
+	fi
+
 	# Call apfel with SYS_DRAFT system prompt
 	if ! apfel -q -s "$SYS_DRAFT" -- "$ctx" >"$draft_file" 2>/dev/null; then
 		echo "ERROR: apfel failed for subtask $subtask_id" >&2
@@ -249,6 +290,7 @@ draft_subtask() {
 # Reads: .bb/{tid}/p (plan), .bb/{tid}/{subtask_id}/f (final drafts)
 # Writes: .bb/{tid}/out (final output)
 # Returns: 0 on success
+# Options: DRY_RUN=true shows context without calling apfel
 stitch_task() {
 	local tid="$1"
 
@@ -290,6 +332,13 @@ stitch_task() {
 	local total_len=${#buffer}
 	local result=""
 
+	# Dry-run mode: skip apfel call
+	if [[ "$DRY_RUN" == "true" ]]; then
+		print_status "INFO" "DRY RUN: Skipping stitch, would combine ${#sections[@]} sections"
+		printf '%s\n' "$buffer" >"$out_file"
+		return 0
+	fi
+
 	if ((total_len < 3000)); then
 		# Use apfel to combine
 		if ! result="$(apfel -q -s "$SYS_STITCH" -- "$buffer" 2>/dev/null)"; then
@@ -322,11 +371,15 @@ run_harness() {
 		return 1
 	fi
 
+	print_status "INFO" "Starting harness for task $tid"
+
 	# Process each subtask in order
 	while IFS=' ' read -r subtask_id rest; do
 		if [[ -z "$subtask_id" ]]; then
 			continue
 		fi
+
+		print_status "INFO" "Processing subtask $subtask_id: $rest"
 
 		# Assemble context for this subtask
 		if ! assemble_context "$tid" "$subtask_id"; then
@@ -349,6 +402,7 @@ run_harness() {
 				# FAIL - handle retry
 				if ! handle_retry "$tid" "$subtask_id" 3; then
 					# No retries left - accept unverified
+					print_status "FAIL" "Subtask $subtask_id: max retries exceeded, accepting unverified"
 					break
 				fi
 				# Retry with new draft
@@ -366,5 +420,6 @@ run_harness() {
 		return 1
 	fi
 
+	print_status "PASS" "Task $tid completed"
 	return 0
 }
