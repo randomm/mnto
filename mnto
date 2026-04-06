@@ -4,31 +4,13 @@ set -euo pipefail
 # mnto — Minimalist task orchestrator
 # Usage: mnto "goal" | mnto --resume {tid} | mnto --list
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly BB_DIR=".bb"
 
 # Source library functions
 source "$SCRIPT_DIR/lib/blackboard.bash"
-
-# System prompts
-SYS_PLAN="Decompose the goal into 3-8 sections. Output one line per section:
-{id} {label}: {description}, {word limit}
-IDs: lowercase alphanumeric, 3 chars. No other output."
-
-SYS_DRAFT="Write the section described in TASK. Follow the word limit.
-Use context from PREV for continuity. If CRIT is present,
-address the issues raised. Output only the section text.
-No headers unless the task requires them. No meta-commentary."
-
-SYS_VERIFY="Check if DRAFT satisfies SPEC. Output PASS if acceptable.
-Output FAIL: {one-line reason} if not. Be strict but fair.
-Only fail for: missing required content, exceeding word limit
-by >50%, incoherent text. Do not fail for style preferences."
-
-SYS_STITCH="Combine the sections below into a single coherent document.
-Add brief transitions between sections if needed. Fix any
-inconsistencies. Do not add new content. Output only the
-final document."
+source "$SCRIPT_DIR/lib/planner.bash"
 
 usage() {
 	cat <<EOF
@@ -61,7 +43,7 @@ create_task() {
 
 	mkdir -p "$BB_DIR"
 
-	# Generate task ID
+	# Generate task ID (with collision detection)
 	local tid
 	tid="$(gen_id)"
 	local bb_dir="$BB_DIR/$tid"
@@ -72,8 +54,9 @@ create_task() {
 	# Save goal
 	echo "$goal" >"$bb_dir/g"
 
-	# Call apfel to generate plan (escape goal to prevent command injection)
-	plan="$(apfel -s "$SYS_PLAN" -- "$goal" 2>/dev/null || echo "")"
+	# Generate plan using planner module
+	local plan
+	plan="$(generate_plan "$goal")"
 
 	if [[ -z "$plan" ]]; then
 		echo "ERROR: Failed to generate plan" >&2
@@ -89,7 +72,7 @@ create_task() {
 
 resume_task() {
 	local tid="$1"
-	if ! validate_tid "$tid"; then
+	if ! validate_id "$tid"; then
 		echo "ERROR: Invalid task ID format" >&2
 		exit 1
 	fi

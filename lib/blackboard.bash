@@ -3,38 +3,45 @@
 set -euo pipefail
 
 # Validate task ID format (security)
-validate_tid() {
-	local tid="$1"
-	if [[ ! "$tid" =~ ^[a-zA-Z0-9]{3}$ ]]; then
-		echo "ERROR: Invalid task ID format '$tid'" >&2
+validate_id() {
+	local id="$1"
+	if [[ ! "$id" =~ ^[a-zA-Z0-9]{3}$ ]]; then
+		echo "ERROR: Invalid task ID format '$id'" >&2
 		return 1
 	fi
 	return 0
 }
 
-# Generate 3-char base62 ID
+# Generate 3-char base62 ID with collision detection
 gen_id() {
 	local chars="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 	local id=""
 	local i
-	for ((i = 0; i < 3; i++)); do
-		id+="${chars:$((RANDOM % 62)):1}"
+	while true; do
+		id=""
+		for ((i = 0; i < 3; i++)); do
+			id+="${chars:$((RANDOM % 62)):1}"
+		done
+		# Collision check - regenerate if directory already exists
+		if [[ ! -d "$BB_DIR/$id" ]]; then
+			echo "$id"
+			return 0
+		fi
 	done
-	echo "$id"
 }
 
 # Return next waiting subtask for task
+# Uses "NULL" sentinel when no waiting task found
 next_task() {
 	local tid="$1"
-	if ! validate_tid "$tid"; then
-		echo ""
+	if ! validate_id "$tid"; then
+		echo "NULL"
 		return 1
 	fi
-	local bb_dir=".bb/$tid"
-	local status_file="$bb_dir/s"
+	local status_file="$BB_DIR/$tid/s"
 
 	if [[ ! -f "$status_file" ]]; then
-		echo ""
+		echo "NULL"
 		return 1
 	fi
 
@@ -45,21 +52,24 @@ next_task() {
 		fi
 	done <"$status_file"
 
-	echo ""
+	echo "NULL"
 	return 1
 }
 
 # Update status file for subtask
+# Usage: set_status <tid> <id> <state> <retries>
 set_status() {
 	local tid="$1"
-	if ! validate_tid "$tid"; then
-		return 1
-	fi
 	local id="$2"
 	local state="$3"
-	local retries="${4:-0}"
-	local bb_dir=".bb/$tid"
-	local status_file="$bb_dir/s"
+	local retries="$4"
+	if ! validate_id "$tid"; then
+		return 1
+	fi
+	if ! validate_id "$id"; then
+		return 1
+	fi
+	local status_file="$BB_DIR/$tid/s"
 	local tmp_file
 	if ! tmp_file="$(mktemp "${status_file}.XXXXXX")"; then
 		echo "ERROR: Failed to create temp file" >&2
@@ -67,6 +77,7 @@ set_status() {
 	fi
 
 	if [[ ! -f "$status_file" ]]; then
+		rm -f "$tmp_file"
 		return 1
 	fi
 
@@ -82,18 +93,20 @@ set_status() {
 }
 
 # Return previous subtask's final output
+# Uses "NULL" sentinel when no previous output found
+# Usage: prev_final <tid> <id>
 prev_final() {
 	local tid="$1"
-	if ! validate_tid "$tid"; then
-		echo ""
+	local id="$2"
+	if ! validate_id "$tid"; then
+		echo "NULL"
 		return 1
 	fi
-	local id="$2"
-	local bb_dir=".bb/$tid"
+	local bb_dir="$BB_DIR/$tid"
 	local plan_file="$bb_dir/p"
 
 	if [[ ! -f "$plan_file" ]]; then
-		echo ""
+		echo "NULL"
 		return 1
 	fi
 
@@ -108,7 +121,7 @@ prev_final() {
 	if [[ -n "$prev_id" ]] && [[ -f "$bb_dir/$prev_id/f" ]]; then
 		cat "$bb_dir/$prev_id/f"
 	else
-		echo ""
+		echo "NULL"
 	fi
 }
 
@@ -140,13 +153,14 @@ validate_plan_format() {
 }
 
 # Parse plan and create subtask structure
+# Usage: parse_plan <plan> <tid>
 parse_plan() {
 	local plan="$1"
 	local tid="$2"
-	if ! validate_tid "$tid"; then
-		exit 1
+	if ! validate_id "$tid"; then
+		return 1
 	fi
-	local bb_dir=".bb/$tid"
+	local bb_dir="$BB_DIR/$tid"
 	local plan_file="$bb_dir/p"
 	local status_file="$bb_dir/s"
 
@@ -158,7 +172,7 @@ parse_plan() {
 	# Validate plan format before parsing
 	if ! validate_plan_format "$plan"; then
 		rm -rf "$bb_dir"
-		exit 1
+		return 1
 	fi
 
 	# Initialize status file with waiting state
