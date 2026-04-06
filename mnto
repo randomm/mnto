@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# mnto — Minimalist task orchestrator
+# Usage: mnto "goal" | mnto --resume {tid} | mnto --list
+
+# SCRIPT_DIR can be overridden via env for testing
+SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+readonly SCRIPT_DIR
+readonly BB_DIR=".bb"
+
+# Source library functions
+source "$SCRIPT_DIR/lib/blackboard.bash"
+source "$SCRIPT_DIR/lib/planner.bash"
+
+usage() {
+	cat <<EOF
+Usage: mnto "goal" | mnto --resume {tid} | mnto --list
+
+Commands:
+  mnto "goal"          Create new task and run planner
+  mnto --resume {tid}  Resume existing task
+  mnto --list          List all tasks
+EOF
+}
+
+list_tasks() {
+	if [[ ! -d "$BB_DIR" ]]; then
+		echo "No tasks found"
+		return 0
+	fi
+
+	for task_dir in "$BB_DIR"/*/; do
+		if [[ -d "$task_dir" ]]; then
+			local tid
+			tid="$(basename "$task_dir")"
+			echo "$tid"
+		fi
+	done
+}
+
+create_task() {
+	local goal="$1"
+
+	mkdir -p "$BB_DIR"
+
+	# Generate task ID (with collision detection)
+	local tid
+	tid="$(gen_id)"
+	local bb_dir="$BB_DIR/$tid"
+
+	# Create task directory
+	mkdir -p "$bb_dir"
+
+	# Save goal
+	echo "$goal" >"$bb_dir/g"
+
+	# Generate plan using planner module
+	local plan
+	plan="$(generate_plan "$goal")"
+
+	if [[ -z "$plan" ]]; then
+		echo "ERROR: Failed to generate plan" >&2
+		rm -rf "$bb_dir"
+		exit 1
+	fi
+
+	# Parse plan into structure
+	parse_plan "$plan" "$tid"
+
+	echo "Created task: $tid"
+}
+
+resume_task() {
+	local tid="$1"
+	if ! validate_id "$tid"; then
+		echo "ERROR: Invalid task ID format" >&2
+		exit 1
+	fi
+	local bb_dir="$BB_DIR/$tid"
+
+	if [[ ! -d "$bb_dir" ]]; then
+		echo "ERROR: Task '$tid' not found" >&2
+		exit 1
+	fi
+
+	echo "Resuming task: $tid"
+}
+
+main() {
+	if [[ $# -eq 0 ]]; then
+		usage
+		exit 1
+	fi
+
+	case "$1" in
+	-h | --help)
+		usage
+		exit 0
+		;;
+	--list)
+		list_tasks
+		;;
+	--resume)
+		if [[ $# -ne 2 ]]; then
+			usage
+			exit 1
+		fi
+		resume_task "$2"
+		;;
+	*)
+		create_task "$@"
+		;;
+	esac
+}
+
+main "$@"
