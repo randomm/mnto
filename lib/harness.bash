@@ -319,38 +319,46 @@ stitch_task() {
 		fi
 	done <"$plan_file"
 
-	# Join sections with "---" separator
-	local buffer=""
+	# Write sections directly to temp file (avoid O(n²) buffer concatenation)
+	local tmp_out
+	tmp_out="$(mktemp "${out_file}.XXXXXX")" || return 1
+
 	for ((i = 0; i < ${#sections[@]}; i++)); do
 		if ((i > 0)); then
-			buffer="$buffer"$'\n'"---"$'\n'
+			printf '\n---\n\n' >>"$tmp_out"
 		fi
-		buffer="$buffer${sections[i]}"
+		printf '%s\n' "${sections[i]}" >>"$tmp_out"
 	done
 
-	# Decide: apfel combine vs direct concatenation
-	local total_len=${#buffer}
+	# Read back for apfel processing if needed
+	local total_len
+	total_len="$(wc -c <"$tmp_out")"
+
+	# Decide: apfel combine vs direct use
 	local result=""
 
 	# Dry-run mode: skip apfel call
 	if [[ "$DRY_RUN" == "true" ]]; then
 		print_status "INFO" "DRY RUN: Skipping stitch, would combine ${#sections[@]} sections"
-		printf '%s\n' "$buffer" >"$out_file"
+		mv "$tmp_out" "$out_file"
 		return 0
 	fi
 
 	if ((total_len < 3000)); then
 		# Use apfel to combine
+		local buffer
+		buffer="$(cat "$tmp_out")"
 		if ! result="$(apfel -q -s "$SYS_STITCH" -- "$buffer" 2>/dev/null)"; then
 			# Fallback to direct concatenation
 			result="$buffer"
 		fi
+		echo "$result" >"$tmp_out"
 	else
-		# Direct concatenation
-		result="$buffer"
+		# Direct concatenation - already in tmp_out
+		:
 	fi
 
-	printf '%s\n' "$result" >"$out_file"
+	mv "$tmp_out" "$out_file"
 }
 
 # Process a single subtask through draft-verify loop

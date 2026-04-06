@@ -229,23 +229,6 @@ parse_plan() {
 	done <"$plan_file" >"$status_file"
 }
 
-# Read full status file for a task
-# Usage: read_status_file <tid>
-# Returns: status file contents, or empty if not found
-read_status_file() {
-	local tid="$1"
-	if ! validate_id "$tid"; then
-		echo ""
-		return 1
-	fi
-	local status_file="$BB_DIR/$tid/s"
-	if [[ ! -f "$status_file" ]]; then
-		echo ""
-		return 0
-	fi
-	cat "$status_file"
-}
-
 # Count subtasks by state
 # Usage: count_subtasks <tid>
 # Returns: "waiting draft checkpoint fail final" counts
@@ -285,25 +268,32 @@ get_task_status() {
 	fi
 	local bb_dir="$BB_DIR/$tid"
 
-	if [[ ! -f "$bb_dir/out" ]]; then
-		# No output yet - check status
-		if [[ ! -f "$bb_dir/s" ]]; then
-			echo "unknown"
-			return 0
-		fi
-		# Check if any subtasks are still pending
-		while IFS=' ' read -r _id state _retries; do
-			if [[ "$state" != "f" ]]; then
-				echo "running"
-				return 0
-			fi
-		done <"$bb_dir/s"
-		echo "waiting"
-		return 0
-	else
+	# Check if output exists (task completed)
+	if [[ -f "$bb_dir/out" ]]; then
 		echo "done"
 		return 0
 	fi
+
+	# No output yet - derive status from subtask counts
+	local counts
+	counts="$(count_subtasks "$tid")"
+	read -r w d c fail _ <<<"$counts"
+
+	# If any waiting or in-progress (draft/checkpoint), task is running
+	if ((w > 0 || d > 0 || c > 0)); then
+		echo "running"
+		return 0
+	fi
+
+	# No waiting/in-progress subtasks but no output yet
+	if ((fail > 0)); then
+		# Some failed but not stitched yet
+		echo "waiting"
+		return 0
+	fi
+
+	echo "unknown"
+	return 0
 }
 
 # Get task goal snippet (first line, truncated)

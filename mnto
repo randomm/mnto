@@ -204,10 +204,6 @@ parse_options() {
 			VIPUNE_ENABLED="true"
 			shift
 			;;
-		--list | --resume)
-			# These are handled in main
-			break
-			;;
 		-*)
 			echo "ERROR: Unknown option: $1" >&2
 			usage

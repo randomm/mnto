@@ -169,44 +169,38 @@ teardown() {
 
 # ============ Plan Model Feature Tests ============
 
+# Mock apfel for testing
+mock_apfel() {
+	echo "abc Plan: Test plan"
+}
+
+# ============ Generate Plan Tests ============
+
 @test "generate_plan respects PLAN_MODEL=apfel" {
 	source "$MNTO/lib/planner.bash"
 
-	PLAN_MODEL="apfel"
+	# Define apfel function to mock the command
 	apfel() {
 		echo "abc Plan: Test plan"
 	}
+
+	PLAN_MODEL="apfel"
 
 	local result
 	result="$(generate_plan "Test goal")"
 	[[ "$result" == "abc Plan: Test plan" ]]
 }
 
-@test "generate_plan handles PLAN_MODEL=curl when server unavailable" {
+@test "generate_plan rejects non-apfel PLAN_MODEL" {
 	source "$MNTO/lib/planner.bash"
 
 	PLAN_MODEL="curl"
-	PLAN_MODEL_URL="http://127.0.0.1:8080"
 
-	# When server is unavailable, curl returns failure which generate_plan handles
-	# We just verify the function doesn't error and returns something
-	local result
-	result="$(generate_plan "Test goal")" || result=""
-
-	# Result may be empty or contain error from curl - both are acceptable
-	# The function should not crash
-	true
-}
-
-@test "generate_plan handles PLAN_MODEL=cat command" {
-	source "$MNTO/lib/planner.bash"
-
-	PLAN_MODEL="cat"
-	# cat will echo stdin back
-
-	local result
-	result="$(generate_plan "Test goal")"
-	[ -z "$result" ] || [[ "$result" == *"Test goal"* ]]
+	run generate_plan "Test goal"
+	# Should return failure (non-apfel not supported)
+	# Output should contain error message (run captures stderr)
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"ERROR: PLAN_MODEL must be 'apfel' for now"* ]]
 }
 
 # ============ Vipune Feature Tests ============
