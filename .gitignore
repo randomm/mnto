@@ -7,6 +7,9 @@ apfel
 # OS files
 .DS_Store
 
+# E2E test results
+test/e2e/results/
+
 # Editor files
 *.swp
 *.swo
