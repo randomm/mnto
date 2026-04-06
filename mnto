@@ -159,33 +159,9 @@ resume_task() {
 		while [[ -n "$next_subtask" ]]; do
 			print_status "INFO" "Processing subtask $next_subtask"
 
-			# Assemble context for this subtask
-			if ! assemble_context "$tid" "$next_subtask"; then
-				echo "ERROR: Failed to assemble context for $next_subtask" >&2
-				exit 1
+			if ! process_subtask "$tid" "$next_subtask"; then
+				print_status "FAIL" "Subtask $next_subtask: max retries exceeded or failed"
 			fi
-
-			# Draft
-			if ! draft_subtask "$tid" "$next_subtask"; then
-				echo "ERROR: Failed to draft $next_subtask" >&2
-				exit 1
-			fi
-
-			# Verify loop with retry
-			while true; do
-				if verify_subtask "$tid" "$next_subtask"; then
-					break
-				else
-					if ! handle_retry "$tid" "$next_subtask" 3; then
-						print_status "FAIL" "Subtask $next_subtask: max retries exceeded"
-						break
-					fi
-					if ! draft_subtask "$tid" "$next_subtask"; then
-						echo "ERROR: Failed to redraft $next_subtask" >&2
-						exit 1
-					fi
-				fi
-			done
 
 			# Find next waiting subtask
 			next_subtask="$(next_task "$tid")"

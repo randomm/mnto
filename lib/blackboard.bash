@@ -211,14 +211,13 @@ parse_plan() {
 
 	mkdir -p "$bb_dir"
 
-	# Write plan file
-	echo "$plan" >"$plan_file"
-
-	# Validate plan format before parsing
+	# Validate plan format before creating any files
 	if ! validate_plan_format "$plan"; then
-		rm -rf "$bb_dir"
 		return 1
 	fi
+
+	# Write plan file
+	echo "$plan" >"$plan_file"
 
 	# Initialize status file with waiting state
 	while IFS=' ' read -r id rest; do

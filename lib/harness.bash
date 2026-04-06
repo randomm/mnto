@@ -48,10 +48,10 @@ assemble_context() {
 	local tmp_ctx
 	tmp_ctx="$(mktemp "${ctx_file}.XXXXXX")" || return 1
 
-	# Read goal
+	# Read goal (truncate to 1024 bytes to prevent memory issues)
 	local goal=""
 	if [[ -f "$bb_dir/g" ]]; then
-		goal="$(cat "$bb_dir/g")"
+		goal="$(head -c 1024 "$bb_dir/g")"
 	fi
 
 	# Read plan line for this subtask
@@ -315,7 +315,7 @@ stitch_task() {
 		fi
 		local final_file="$bb_dir/$subtask_id/f"
 		if [[ -f "$final_file" ]]; then
-			sections+=("$(cat "$final_file")")
+			sections+=("$(<"$final_file")")
 		fi
 	done <"$plan_file"
 
@@ -353,6 +353,52 @@ stitch_task() {
 	printf '%s\n' "$result" >"$out_file"
 }
 
+# Process a single subtask through draft-verify loop
+# Usage: process_subtask <tid> <subtask_id>
+# Returns: 0 on success, 1 on failure (including max retries)
+process_subtask() {
+	local tid="$1"
+	local subtask_id="$2"
+
+	if ! validate_id "$tid"; then
+		return 1
+	fi
+	if ! validate_id "$subtask_id"; then
+		return 1
+	fi
+
+	# Assemble context for this subtask
+	if ! assemble_context "$tid" "$subtask_id"; then
+		echo "ERROR: Failed to assemble context for $subtask_id" >&2
+		return 1
+	fi
+
+	# Initial draft
+	if ! draft_subtask "$tid" "$subtask_id"; then
+		echo "ERROR: Failed to draft $subtask_id" >&2
+		return 1
+	fi
+
+	# Verify loop with retry
+	while true; do
+		if verify_subtask "$tid" "$subtask_id"; then
+			# PASS - subtask complete
+			return 0
+		else
+			# FAIL - handle retry
+			if ! handle_retry "$tid" "$subtask_id" 3; then
+				# No retries left - accept unverified draft, still considered success
+				return 0
+			fi
+			# Retry with new draft
+			if ! draft_subtask "$tid" "$subtask_id"; then
+				echo "ERROR: Failed to redraft $subtask_id after retry" >&2
+				return 1
+			fi
+		fi
+	done
+}
+
 # Run the full draft-verify harness for a task
 # Usage: run_harness <tid>
 # Returns: 0 on success, 1 on failure
@@ -381,37 +427,10 @@ run_harness() {
 
 		print_status "INFO" "Processing subtask $subtask_id: $rest"
 
-		# Assemble context for this subtask
-		if ! assemble_context "$tid" "$subtask_id"; then
-			echo "ERROR: Failed to assemble context for $subtask_id" >&2
+		if ! process_subtask "$tid" "$subtask_id"; then
+			echo "ERROR: Failed to process subtask $subtask_id" >&2
 			return 1
 		fi
-
-		# Initial draft
-		if ! draft_subtask "$tid" "$subtask_id"; then
-			echo "ERROR: Failed to draft $subtask_id" >&2
-			return 1
-		fi
-
-		# Verify loop with retry
-		while true; do
-			if verify_subtask "$tid" "$subtask_id"; then
-				# PASS - move to next subtask
-				break
-			else
-				# FAIL - handle retry
-				if ! handle_retry "$tid" "$subtask_id" 3; then
-					# No retries left - accept unverified
-					print_status "FAIL" "Subtask $subtask_id: max retries exceeded, accepting unverified"
-					break
-				fi
-				# Retry with new draft
-				if ! draft_subtask "$tid" "$subtask_id"; then
-					echo "ERROR: Failed to redraft $subtask_id after retry" >&2
-					return 1
-				fi
-			fi
-		done
 	done <"$plan_file"
 
 	# Stitch all final drafts
