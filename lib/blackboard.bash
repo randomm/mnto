@@ -23,6 +23,7 @@ gen_id() {
 			id+="${chars:$((RANDOM % 62)):1}"
 		done
 		# Collision check - regenerate if directory already exists
+		# shellcheck disable=SC2153 # BB_DIR is defined in mnto at runtime
 		if [[ ! -d "$BB_DIR/$id" ]]; then
 			echo "$id"
 			return 0
@@ -140,7 +141,7 @@ validate_plan_format() {
 			continue
 		fi
 		((non_empty_lines++)) || true
-		if [[ ! "$line" =~ ^[a-z0-9]{3} ]]; then
+		if [[ ! "$line" =~ ^[a-zA-Z0-9]{3} ]]; then
 			echo "ERROR: Invalid plan format: $line" >&2
 			return 1
 		fi

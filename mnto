@@ -4,8 +4,9 @@ set -euo pipefail
 # mnto — Minimalist task orchestrator
 # Usage: mnto "goal" | mnto --resume {tid} | mnto --list
 
+# SCRIPT_DIR can be overridden via env for testing
+SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 readonly SCRIPT_DIR
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly BB_DIR=".bb"
 
 # Source library functions
