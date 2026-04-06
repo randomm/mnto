@@ -35,16 +35,9 @@ assemble_context() {
 		goal="$(cat "$bb_dir/g")"
 	fi
 
-	# Read plan and find this subtask's line
-	local plan_line=""
-	if [[ -f "$bb_dir/p" ]]; then
-		while IFS=' ' read -r pid rest; do
-			if [[ "$pid" == "$subtask_id" ]]; then
-				plan_line="$pid $rest"
-				break
-			fi
-		done <"$bb_dir/p"
-	fi
+	# Read plan line for this subtask
+	local plan_line
+	plan_line="$(read_plan_line "$tid" "$subtask_id")" || true
 
 	# Read previous subtask's final output (if exists)
 	local prev_output=""
@@ -113,15 +106,8 @@ verify_subtask() {
 	draft="$(cat "$draft_file")"
 
 	# Read plan line for this subtask (spec)
-	local spec=""
-	if [[ -f "$bb_dir/p" ]]; then
-		while IFS=' ' read -r pid rest; do
-			if [[ "$pid" == "$subtask_id" ]]; then
-				spec="$pid $rest"
-				break
-			fi
-		done <"$bb_dir/p"
-	fi
+	local spec
+	spec="$(read_plan_line "$tid" "$subtask_id")" || true
 
 	# Assemble verify context: draft + spec
 	local vctx="DRAFT:
@@ -169,7 +155,7 @@ get_retries() {
 		return
 	fi
 
-	while IFS=' ' read -r id state retries; do
+	while IFS=' ' read -r id _state retries; do
 		if [[ "$id" == "$subtask_id" ]]; then
 			echo "$retries"
 			return
@@ -280,28 +266,25 @@ stitch_task() {
 	fi
 
 	# Collect all final drafts in order
-	local buffer=""
-	local first=true
-
+	local -a sections=()
 	while IFS=' ' read -r subtask_id rest; do
 		if [[ -z "$subtask_id" ]]; then
 			continue
 		fi
 		local final_file="$bb_dir/$subtask_id/f"
-		if [[ ! -f "$final_file" ]]; then
-			continue
+		if [[ -f "$final_file" ]]; then
+			sections+=("$(cat "$final_file")")
 		fi
+	done <"$plan_file"
 
-		if [[ "$first" == "true" ]]; then
-			first=false
-		else
+	# Join sections with "---" separator
+	local buffer=""
+	for ((i = 0; i < ${#sections[@]}; i++)); do
+		if ((i > 0)); then
 			buffer="$buffer"$'\n'"---"$'\n'
 		fi
-
-		local content
-		content="$(cat "$final_file")"
-		buffer="$buffer$content"
-	done <"$plan_file"
+		buffer="$buffer${sections[i]}"
+	done
 
 	# Decide: apfel combine vs direct concatenation
 	local total_len=${#buffer}
