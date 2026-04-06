@@ -126,6 +126,38 @@ prev_final() {
 	fi
 }
 
+# Read plan line for specific subtask
+# Usage: read_plan_line <tid> <subtask_id>
+# Returns: plan line for subtask, or empty string if not found
+read_plan_line() {
+	local tid="$1"
+	local subtask_id="$2"
+
+	if ! validate_id "$tid"; then
+		return 1
+	fi
+	if ! validate_id "$subtask_id"; then
+		return 1
+	fi
+
+	local plan_file="$BB_DIR/$tid/p"
+
+	if [[ ! -f "$plan_file" ]]; then
+		echo ""
+		return 1
+	fi
+
+	while IFS=' ' read -r pid rest; do
+		if [[ "$pid" == "$subtask_id" ]]; then
+			echo "$pid $rest"
+			return 0
+		fi
+	done <"$plan_file"
+
+	echo ""
+	return 1
+}
+
 # Validate plan format before parsing (security)
 validate_plan_format() {
 	local plan="$1"

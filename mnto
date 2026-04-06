@@ -12,6 +12,7 @@ readonly BB_DIR=".bb"
 # Source library functions
 source "$SCRIPT_DIR/lib/blackboard.bash"
 source "$SCRIPT_DIR/lib/planner.bash"
+source "$SCRIPT_DIR/lib/harness.bash"
 
 usage() {
 	cat <<EOF
@@ -67,6 +68,9 @@ create_task() {
 
 	# Parse plan into structure
 	parse_plan "$plan" "$tid"
+
+	# Run the draft-verify harness
+	run_harness "$tid"
 
 	echo "Created task: $tid"
 }
