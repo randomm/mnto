@@ -14,6 +14,12 @@ readonly GITHUB_API="https://api.github.com/repos/${REPO}/releases/latest"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local}"
 VERSION="${VERSION:-latest}"
 
+# Validate VERSION format (alphanumeric, dots, underscores, hyphens)
+if [ -n "$VERSION" ] && ! echo "$VERSION" | grep -qE '^[a-zA-Z0-9._-]+$'; then
+	echo "Invalid VERSION format: $VERSION" >&2
+	exit 1
+fi
+
 usage() {
 	cat <<EOF
 Usage: install.sh [options]
@@ -69,20 +75,14 @@ install() {
 	local lib_dir="${INSTALL_DIR}/lib/mnto"
 	local config_dir="${HOME}/.config/mnto"
 
-	# Pre-check permissions
-	if [ ! -d "$INSTALL_DIR" ]; then
-		mkdir -p "$INSTALL_DIR" || error "Cannot create installation directory: $INSTALL_DIR"
-	fi
-	[ -w "$INSTALL_DIR" ] || error "No write permission for: $INSTALL_DIR"
-
 	log "Creating directories..."
-	mkdir -p "${bin_dir}" "${lib_dir}" "${config_dir}"
+	mkdir -p "${bin_dir}" "${lib_dir}" "${config_dir}" || error "Cannot create installation directories"
 
 	# Get download URL
 	local download_url
 	if [ "$VERSION" = "latest" ]; then
 		log "Fetching latest release info..."
-		download_url=$(curl -fsSL "${GITHUB_API}" | grep '"browser_download_url"' | head -n 1 | cut -d '"' -f 4)
+		download_url=$(curl -fsSL --connect-timeout 10 --max-time 60 "${GITHUB_API}" | grep '"browser_download_url"' | head -n 1 | cut -d '"' -f 4)
 	else
 		download_url="https://github.com/${REPO}/releases/download/${VERSION}/mnto.tar.gz"
 	fi
@@ -96,17 +96,22 @@ install() {
 	trap 'rm -rf "$temp_dir"' EXIT INT TERM
 
 	local tarball="${temp_dir}/mnto.tar.gz"
-	curl -fsSL -o "$tarball" "$download_url" || error "Failed to download release"
+	curl --connect-timeout 10 --max-time 60 -fsSL -o "$tarball" "$download_url" || error "Failed to download release"
 
 	# Download checksum if available
 	local checksum_url="${download_url%.tar.gz}.sha256"
 	local expected_hash=""
-	expected_hash=$(curl -fsSL "$checksum_url" 2>/dev/null | cut -d' ' -f1) || true
+	if curl --connect-timeout 10 --max-time 60 -fsSL --head "$checksum_url" 2>/dev/null | head -n 1 | grep -q "200"; then
+		expected_hash=$(curl --connect-timeout 10 --max-time 60 -fsSL "$checksum_url" 2>/dev/null | cut -d' ' -f1)
+	fi
 
 	# Verify checksum
 	if [ -n "$expected_hash" ]; then
 		local actual_hash
-		actual_hash=$(sha256sum "$tarball" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$tarball" | cut -d' ' -f1)
+		actual_hash=$(
+			sha256sum "$tarball" 2>/dev/null | cut -d' ' -f1 ||
+				shasum -a 256 "$tarball" 2>/dev/null | cut -d' ' -f1
+		)
 		[ "$actual_hash" = "$expected_hash" ] || error "Checksum mismatch - archive may be corrupted"
 	fi
 
@@ -137,14 +142,7 @@ install() {
 		echo ""
 		echo "Add the following to your shell profile (~/.bashrc, ~/.zshrc, etc.):"
 		echo ""
-		case "$SHELL" in
-		*/zsh)
-			echo "  export PATH=\"${bin_dir}:\$PATH\""
-			;;
-		*)
-			echo "  export PATH=\"${bin_dir}:\$PATH\""
-			;;
-		esac
+		echo "  export PATH=\"${bin_dir}:\$PATH\""
 		echo ""
 		echo "Then restart your shell or run: source ~/.bashrc (or ~/.zshrc)"
 	fi
