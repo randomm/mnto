@@ -1,0 +1,5 @@
+# Default verify contract
+version: 1
+rules:
+  - name: spec_match
+    type: custom

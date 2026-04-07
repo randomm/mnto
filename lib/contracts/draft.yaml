@@ -1,0 +1,6 @@
+# Default draft contract
+version: 1
+rules:
+  - name: output_required
+    field: output
+    type: required

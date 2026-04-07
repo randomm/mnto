@@ -1,0 +1,6 @@
+# Default stitch contract
+version: 1
+rules:
+  - name: output_format
+    type: format
+    value: markdown

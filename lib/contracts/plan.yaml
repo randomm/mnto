@@ -1,0 +1,10 @@
+# Default plan contract
+version: 1
+rules:
+  - name: goal_required
+    field: goal
+    type: required
+  - name: goal_min_length
+    field: goal
+    type: min_length
+    value: 10

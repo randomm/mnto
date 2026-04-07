@@ -35,6 +35,7 @@ fi
 source "$SCRIPT_DIR/lib/blackboard.bash"
 source "$SCRIPT_DIR/lib/planner.bash"
 source "$SCRIPT_DIR/lib/harness.bash"
+source "$SCRIPT_DIR/lib/contracts.bash"
 
 # Global options
 DRY_RUN="${DRY_RUN:-false}"
