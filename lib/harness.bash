@@ -28,9 +28,9 @@ print_status() {
 
 # Assemble context for subtask draft
 # Usage: assemble_context <tid> <subtask_id>
-# Reads: .bb/{tid}/p (plan), .bb/{tid}/g (goal), .bb/{tid}/{prev_id}/f (previous final, optional)
-#        .bb/{tid}/{subtask_id}/c (critique, optional)
-# Writes: .bb/{tid}/{subtask_id}/ctx
+# Reads: .mnto/bb/{tid}/p (plan), .mnto/bb/{tid}/g (goal), .mnto/bb/{tid}/{prev_id}/f (previous final, optional)
+#        .mnto/bb/{tid}/{subtask_id}/c (critique, optional)
+# Writes: .mnto/bb/{tid}/{subtask_id}/ctx
 # Options: VIPUNE_ENABLED=true adds vipune search results
 assemble_context() {
 	local tid="$1"
@@ -105,8 +105,8 @@ assemble_context() {
 
 # Verify subtask draft using apfel
 # Usage: verify_subtask <tid> <subtask_id>
-# Reads: .bb/{tid}/{subtask_id}/d (draft)
-# Writes: .bb/{tid}/{subtask_id}/c (critique on FAIL), or promotes to .bb/{tid}/{subtask_id}/f on PASS
+# Reads: .mnto/bb/{tid}/{subtask_id}/d (draft)
+# Writes: .mnto/bb/{tid}/{subtask_id}/c (critique on FAIL), or promotes to .mnto/bb/{tid}/{subtask_id}/f on PASS
 # Updates status: {subtask_id} c {retries} (FAIL) or {subtask_id} f {retries} (PASS)
 # Returns: 0 on PASS, 1 on FAIL
 verify_subtask() {
@@ -236,8 +236,8 @@ handle_retry() {
 
 # Generate draft for subtask using apfel
 # Usage: draft_subtask <tid> <subtask_id>
-# Reads: .bb/{tid}/{subtask_id}/ctx
-# Writes: .bb/{tid}/{subtask_id}/d
+# Reads: .mnto/bb/{tid}/{subtask_id}/ctx
+# Writes: .mnto/bb/{tid}/{subtask_id}/d
 # Updates status: {subtask_id} d 0
 # Options: DRY_RUN=true shows context without calling apfel
 draft_subtask() {
@@ -287,8 +287,8 @@ draft_subtask() {
 
 # Stitch all final drafts into final output
 # Usage: stitch_task <tid>
-# Reads: .bb/{tid}/p (plan), .bb/{tid}/{subtask_id}/f (final drafts)
-# Writes: .bb/{tid}/out (final output)
+# Reads: .mnto/bb/{tid}/p (plan), .mnto/bb/{tid}/{subtask_id}/f (final drafts)
+# Writes: .mnto/bb/{tid}/out (final output)
 # Returns: 0 on success
 # Options: DRY_RUN=true shows context without calling apfel
 stitch_task() {

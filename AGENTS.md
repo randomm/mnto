@@ -215,15 +215,15 @@ mnto/
 │   ├── setup.bats        # Shared fixtures
 │   ├── integration.bats  # End-to-end tests
 │   └── harness.bats      # Loop logic tests
-├── .bb/                  # Runtime state (blackboard)
+├── .mnto/bb/             # Runtime state (blackboard)
 │   └── {task-id}/        # Per-task directory (gitignored)
 ├── README.md             # Project overview
 ├── AGENTS.md             # This file
-└── .gitignore            # Excludes .bb/, apfel binary
+└── .gitignore            # Excludes .mnto/bb/, apfel binary
 ```
 
 **Key Invariants**:
-- `.bb/` is gitignored (runtime state)
+- `.mnto/bb/` is gitignored (runtime state)
 - All bash scripts must have `set -euo pipefail`
 - `lib/` functions must be sourced in `mnto`
 - Tests must mock external dependencies

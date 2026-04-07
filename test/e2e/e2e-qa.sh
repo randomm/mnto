@@ -103,14 +103,15 @@ collect_scenario_metrics() {
 	fi
 
 	# Collect metrics from blackboard if available
-	if [[ -d ".bb/${task_id}" ]]; then
+	local bb_dir="${BB_DIR:-.mnto/bb}"
+	if [[ -d "$bb_dir/${task_id}" ]]; then
 		# Count apfel calls by counting lines in status file
-		if [[ -f ".bb/${task_id}/s" ]]; then
-			apfel_calls=$(wc -l <".bb/${task_id}/s")
+		if [[ -f "$bb_dir/${task_id}/s" ]]; then
+			apfel_calls=$(wc -l <"$bb_dir/${task_id}/s")
 		else
 			apfel_calls=0
 		fi
-		retry_count=$(grep -r "retry" ".bb/${task_id}" 2>/dev/null | wc -l || echo 0)
+		retry_count=$(grep -r "retry" "$bb_dir/${task_id}" 2>/dev/null | wc -l || echo 0)
 	fi
 
 	end_time=$(date +%s.%N)

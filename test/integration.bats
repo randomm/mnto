@@ -169,10 +169,11 @@ teardown() {
 	mkdir -p "$TEST_BB_DIR/.bb/xyz"
 	cd "$TEST_BB_DIR"
 
+	export BB_DIR="$TEST_BB_DIR/.bb"
 	source "$MNTO/lib/blackboard.bash"
 
-	echo -e "abc Task A\ndef Task B\ng Task C" >".bb/xyz/p"
-	echo -e "abc - 0\ndef d 0\ng - 0" >".bb/xyz/s"
+	echo -e "abc Task A\ndef Task B\ng Task C" >"$BB_DIR/xyz/p"
+	echo -e "abc - 0\ndef d 0\ng - 0" >"$BB_DIR/xyz/s"
 
 	local result
 	result="$(next_task "xyz")"
@@ -183,17 +184,18 @@ teardown() {
 	mkdir -p "$TEST_BB_DIR/.bb/xyz"
 	cd "$TEST_BB_DIR"
 
+	export BB_DIR="$TEST_BB_DIR/.bb"
 	source "$MNTO/lib/blackboard.bash"
 
-	echo -e "abc Task A\ndef Task B" >".bb/xyz/p"
-	echo -e "abc - 0\ndef - 0" >".bb/xyz/s"
+	echo -e "abc Task A\ndef Task B" >"$BB_DIR/xyz/p"
+	echo -e "abc - 0\ndef - 0" >"$BB_DIR/xyz/s"
 
 	set_status "xyz" "abc" "d" "0"
 
 	local expected
 	expected=$(echo -e "abc d 0\ndef - 0")
 	local actual
-	actual=$(cat ".bb/xyz/s")
+	actual=$(cat "$BB_DIR/xyz/s")
 
 	[ "$expected" = "$actual" ]
 }
@@ -202,10 +204,11 @@ teardown() {
 	mkdir -p "$TEST_BB_DIR/.bb/xyz/abc" "$TEST_BB_DIR/.bb/xyz/def"
 	cd "$TEST_BB_DIR"
 
+	export BB_DIR="$TEST_BB_DIR/.bb"
 	source "$MNTO/lib/blackboard.bash"
 
-	echo -e "abc Task A\ndef Task B\ng Task C" >".bb/xyz/p"
-	echo "Previous output" >".bb/xyz/abc/f"
+	echo -e "abc Task A\ndef Task B\ng Task C" >"$BB_DIR/xyz/p"
+	echo "Previous output" >"$BB_DIR/xyz/abc/f"
 
 	local result
 	result="$(prev_final "xyz" "def")"
@@ -215,6 +218,7 @@ teardown() {
 @test "parse_plan creates proper structure" {
 	cd "$TEST_BB_DIR"
 
+	export BB_DIR="$TEST_BB_DIR/.bb"
 	source "$MNTO/lib/blackboard.bash"
 
 	local plan
@@ -224,15 +228,15 @@ ghi Conclusion: Summary, 50 words"
 
 	parse_plan "$plan" "xyz"
 
-	[ -d ".bb/xyz" ]
-	[ -f ".bb/xyz/p" ]
-	[ -f ".bb/xyz/s" ]
-	[ -d ".bb/xyz/abc" ]
-	[ -d ".bb/xyz/def" ]
+	[ -d "$BB_DIR/xyz" ]
+	[ -f "$BB_DIR/xyz/p" ]
+	[ -f "$BB_DIR/xyz/s" ]
+	[ -d "$BB_DIR/xyz/abc" ]
+	[ -d "$BB_DIR/xyz/def" ]
 
 	# Verify status initialization
 	local status_content
-	status_content=$(cat ".bb/xyz/s")
+	status_content=$(cat "$BB_DIR/xyz/s")
 	[[ "$status_content" =~ "abc - 0" ]]
 	[[ "$status_content" =~ "def - 0" ]]
 	[[ "$status_content" =~ "ghi - 0" ]]
