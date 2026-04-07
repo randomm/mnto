@@ -5,6 +5,7 @@ mnto (from memento) coordinates multiple stateless 3B-LLM agents through a files
 ## Requirements
 
 ### Required
+- macOS arm64 (Apple Silicon)
 - `bash` ≥ 4.0 (for associative arrays)
 - `apfel` — on-device LLM inference CLI ([Arthur-Ficial/apfel](https://github.com/Arthur-Ficial/apfel))
 - `bats` — bash automated testing system
@@ -13,18 +14,6 @@ mnto (from memento) coordinates multiple stateless 3B-LLM agents through a files
 - `vipune` — semantic cross-reference
 - `shellcheck` — static analysis (dev only)
 - `shfmt` — shell formatter (dev only)
-
-## Installation
-
-Install missing dependencies via Homebrew:
-
-```bash
-brew install bats-core
-brew install shellcheck
-brew install shfmt
-```
-
-Note: `apfel` must be installed separately. See [Arthur-Ficial/apfel](https://github.com/Arthur-Ficial/apfel) for installation instructions.
 
 ## Quick Start
 
@@ -38,6 +27,42 @@ Note: `apfel` must be installed separately. See [Arthur-Ficial/apfel](https://gi
 # Resume a task by ID
 ./mnto --resume {tid}
 ```
+
+## Installation
+
+### Manual Installation
+
+```bash
+git clone https://github.com/randomm/mnto.git
+cd mnto
+ln -s $(pwd)/mnto ~/.local/bin/mnto
+```
+
+## Workspace
+
+mnto creates a `.mnto/` directory in your project root to store task state:
+
+```
+.mnto/
+└── bb/              # Task state (blackboard)
+```
+
+This directory is gitignored by default.
+
+## Cleanup
+
+Remove old tasks to free up space:
+
+```bash
+mnto --clean              # Remove tasks older than 30 days
+mnto --clean --days 7     # Remove tasks older than 7 days
+mnto --clean --dry-run    # Show what would be deleted (safe preview)
+
+mnto --prune              # Remove completed tasks only
+mnto --prune --dry-run    # Show what would be pruned
+```
+
+The `--dry-run` flag is recommended for your first cleanup to verify what will be removed.
 
 ## Development
 
@@ -69,7 +94,7 @@ mnto/
 ├── test/                 # Bats integration tests
 │   ├── setup.bats        # Shared fixtures
 │   ├── integration.bats  # End-to-end tests
-│   └── harness.bats      # Loop logic tests
+│   └── *.bats            # Additional test files
 ├── .mnto/bb/             # Runtime state (blackboard, gitignored)
 ├── README.md             # This file
 └── AGENTS.md             # Agent guidelines and conventions
