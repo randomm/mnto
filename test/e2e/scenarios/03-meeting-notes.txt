@@ -1,0 +1,7 @@
+Structure these bullet points into coherent meeting notes:
+- John raised concern about API response times
+- Sarah suggested caching layer
+- Decision: implement Redis cache
+- Timeline: 2 weeks for v1
+- Mike will handle deployment
+- Follow-up meeting scheduled for next Tuesday

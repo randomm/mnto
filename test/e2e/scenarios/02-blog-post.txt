@@ -1,0 +1,1 @@
+Write a technical blog post about coordinating multiple 3B-LLM agents through a filesystem blackboard

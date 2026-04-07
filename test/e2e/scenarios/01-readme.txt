@@ -1,0 +1,1 @@
+Write a concise README.md for a bash tool that coordinates LLM agents via filesystem blackboard
