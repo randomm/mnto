@@ -38,6 +38,16 @@ cd mnto
 ln -s $(pwd)/mnto ~/.local/bin/mnto
 ```
 
+### Development Dependencies
+
+To run tests locally, install development dependencies:
+
+```bash
+brew install bats-core shellcheck shfmt
+```
+
+See [Requirements](#requirements) for full details.
+
 ## Workspace
 
 mnto creates a `.mnto/` directory in your project root to store task state:
@@ -51,15 +61,12 @@ This directory is gitignored by default.
 
 ## Cleanup
 
-Remove old tasks to free up space:
-
 ```bash
-mnto --clean              # Remove tasks older than 30 days
-mnto --clean --days 7     # Remove tasks older than 7 days
-mnto --clean --dry-run    # Show what would be deleted (safe preview)
-
+mnto --clean              # Remove stale tasks (default: >30 days)
+mnto --clean --days 7     # Remove tasks older than N days
 mnto --prune              # Remove completed tasks only
-mnto --prune --dry-run    # Show what would be pruned
+
+# Use --dry-run first to preview any cleanup command
 ```
 
 The `--dry-run` flag is recommended for your first cleanup to verify what will be removed.
