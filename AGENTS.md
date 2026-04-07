@@ -421,6 +421,31 @@ Before EVERY commit:
 
 ---
 
+## Token Economy (CRITICAL)
+
+mnto uses 3B LLMs with **4096 token hard limit** (Apple FoundationModels via apfel). Every token counts.
+
+**Budget Allocation**:
+- **~200 tokens**: Headroom (safety buffer)
+- **~3800 tokens**: Input budget (prompts + context)
+- **~3000 tokens**: Output capacity
+
+**Token Optimizations** (all deliberate, not minimalism):
+- **Single-char filenames**: `p` (plan), `s` (status), `g` (goal), `d` (draft), `c` (critique), `f` (final)
+- **Single-char states**: `-` (waiting), `d` (drafted), `c` (critiqued), `f` (final)
+- **Compact status format**: `{id} {state} {retries}` (e.g., `abc d 0`)
+- **Short subtask IDs**: 3-char base62 (e.g., `ve2`, `a3x`)
+
+**Why This Matters**: Each task with 10 subtasks saves **~100-200 tokens** via these optimizations — that's the ENTIRE headroom budget.
+
+**Tokenization Ratio**: ~1 token = 4-6 characters. Single characters always cost 1 token each.
+
+**Context Assembly**: When building context for apfel calls, mnto includes status files and plan files. Compact naming keeps overhead minimal.
+
+**Stitch Threshold**: At 3000+ chars total output, mnto uses `SYS_STITCH` for smoothing. Below that, direct concatenation with `---` separators.
+
+---
+
 ## Open Questions & Future Directions
 
 **Post-MVP Decisions**:
@@ -431,7 +456,6 @@ Before EVERY commit:
 
 **To Be Documented Later**:
 - Performance benchmarks (apfel call timing, total runtime)
-- Token budget optimization strategies
 - Advanced stitching algorithms for context overflow
 - External model integration patterns
 
