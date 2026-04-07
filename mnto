@@ -10,10 +10,24 @@ readonly SCRIPT_DIR
 readonly BB_DIR=".mnto/bb"
 
 # Backward compatibility: detect existing .bb/ and migrate
-if [[ -d ".bb" ]] && [[ -n "$(ls -A .bb 2>/dev/null)" ]] && [[ ! -d ".mnto/bb" ]]; then
-	echo "WARNING: Found existing .bb/ tasks. Migrating to .mnto/bb/..."
+if [[ -d ".bb" ]] && [[ ! -L ".bb" ]] && [[ -n "$(ls -A .bb 2>/dev/null)" ]] && [[ ! -d ".mnto/bb" ]]; then
+	# Security: Verify ownership before migration
+	_owner="$(stat -c '%u' .bb 2>/dev/null || stat -f '%u' .bb 2>/dev/null)"
+	if [[ "$_owner" != "$(id -u)" ]]; then
+		echo "ERROR: .bb is owned by another user (uid $_owner). Manual migration required." >&2
+		exit 1
+	fi
+
+	# Security: Require explicit opt-in for migration
+	if [[ "${MIGRATE_BB:-}" != "yes" ]]; then
+		echo "WARNING: Found existing .bb/ tasks. To migrate, run with MIGRATE_BB=yes" >&2
+		exit 1
+	fi
+
+	echo "Migrating .bb/ to .mnto/bb/..."
 	mkdir -p .mnto
-	mv .bb .mnto/bb
+	# Atomic non-clobbering move
+	mv -n .bb .mnto/bb
 	echo "Migration complete. Your tasks are now in .mnto/bb/"
 fi
 
