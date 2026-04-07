@@ -3,16 +3,17 @@
 set -euo pipefail
 
 # ANSI terminal colours (used in harness.bash via source)
+# Declare these without readonly to allow multiple sourcing, only set if not already defined
 # shellcheck disable=SC2034
-readonly C_RESET='\033[0m'
+: "${C_RESET:=\033[0m}"
 # shellcheck disable=SC2034
-readonly C_RED='\033[0;31m'
+: "${C_RED:=\033[0;31m}"
 # shellcheck disable=SC2034
-readonly C_GREEN='\033[0;32m'
+: "${C_GREEN:=\033[0;32m}"
 # shellcheck disable=SC2034
-readonly C_YELLOW='\033[0;33m'
+: "${C_YELLOW:=\033[0;33m}"
 # shellcheck disable=SC2034
-readonly C_BLUE='\033[0;34m'
+: "${C_BLUE:=\033[0;34m}"
 
 # Validate task ID format (security)
 validate_id() {
@@ -171,6 +172,7 @@ read_plan_line() {
 }
 
 # Validate plan format before parsing (security)
+# More lenient validation that accepts imperfect apfel output
 validate_plan_format() {
 	local plan="$1"
 	if [[ -z "$plan" ]]; then
@@ -179,19 +181,11 @@ validate_plan_format() {
 	fi
 
 	# Filter empty lines and check minimum count (3 lines required per SYS_PLAN)
-	local non_empty_lines=0
-	while IFS= read -r line; do
-		if [[ -z "$line" ]]; then
-			continue
-		fi
-		((non_empty_lines++)) || true
-		if [[ ! "$line" =~ ^[a-zA-Z0-9]{3} ]]; then
-			echo "ERROR: Invalid plan format: $line" >&2
-			return 1
-		fi
-	done <<<"$plan"
-	if ((non_empty_lines < 3)); then
-		echo "ERROR: Plan must have at least 3 sections (got $non_empty_lines)" >&2
+	# Count lines starting with 3 alnum + space/colon
+	local valid_lines
+	valid_lines=$(echo "$plan" | grep -c -E '^[a-zA-Z0-9]{3}[ :]' || true)
+	if ((valid_lines < 3)); then
+		echo "ERROR: Plan must have at least 3 valid sections (found $valid_lines)" >&2
 		return 1
 	fi
 	return 0

@@ -18,6 +18,8 @@ source "$SCRIPT_DIR/lib/harness.bash"
 DRY_RUN="${DRY_RUN:-false}"
 VIPUNE_ENABLED="${VIPUNE_ENABLED:-false}"
 PLAN_MODEL="${PLAN_MODEL:-apfel}"
+# Global array for parsed options (declared for parse_options)
+REMAINING_ARGS=()
 
 usage() {
 	cat <<EOF
@@ -215,8 +217,8 @@ parse_options() {
 		esac
 	done
 
-	# Return remaining args
-	echo "$@"
+	# Return remaining arguments via global variable
+	REMAINING_ARGS=("$@")
 }
 
 main() {
@@ -226,7 +228,15 @@ main() {
 	fi
 
 	# Parse global options first
-	eval set -- "$(parse_options "$@")"
+	parse_options "$@"
+
+	# Use the parsed arguments
+	set -- "${REMAINING_ARGS[@]}"
+
+	if [[ $# -eq 0 ]]; then
+		usage
+		exit 1
+	fi
 
 	case "$1" in
 	-h | --help)

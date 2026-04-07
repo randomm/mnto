@@ -146,7 +146,7 @@ $spec"
 
 	# Call apfel with SYS_VERIFY
 	local result
-	if ! result="$(apfel -q -s "$SYS_VERIFY" -- "$vctx" 2>/dev/null)"; then
+	if ! result="$(apfel -q -s "$SYS_VERIFY" "$vctx" 2>/dev/null)"; then
 		echo "ERROR: apfel failed for subtask $subtask_id" >&2
 		return 1
 	fi
@@ -274,7 +274,7 @@ draft_subtask() {
 	fi
 
 	# Call apfel with SYS_DRAFT system prompt
-	if ! apfel -q -s "$SYS_DRAFT" -- "$ctx" >"$draft_file" 2>/dev/null; then
+	if ! apfel -q -s "$SYS_DRAFT" "$ctx" >"$draft_file" 2>/dev/null; then
 		echo "ERROR: apfel failed for subtask $subtask_id" >&2
 		return 1
 	fi
@@ -348,7 +348,7 @@ stitch_task() {
 		# Use apfel to combine
 		local buffer
 		buffer="$(cat "$tmp_out")"
-		if ! result="$(apfel -q -s "$SYS_STITCH" -- "$buffer" 2>/dev/null)"; then
+		if ! result="$(apfel -q -s "$SYS_STITCH" "$buffer" 2>/dev/null)"; then
 			# Fallback to direct concatenation
 			result="$buffer"
 		fi
