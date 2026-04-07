@@ -85,7 +85,7 @@ collect_scenario_metrics() {
 	local task_id
 	local mnto_output
 
-	mnto_output=$(./mnto "$(cat "${scenario_path}")" 2>&1) || {
+	mnto_output=$("${SCRIPT_DIR}/../../mnto" "$(cat "${scenario_path}")" 2>&1) || {
 		log "ERROR: mnto failed with exit code $?"
 		return 1
 	}
