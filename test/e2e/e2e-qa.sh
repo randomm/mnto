@@ -90,8 +90,8 @@ collect_scenario_metrics() {
 		return 1
 	}
 
-	# Extract task ID - look for "task:" prefix in mnto output
-	task_id=$(echo "${mnto_output}" | grep -oE 'task: [a-z0-9]+' | grep -oE '[a-z0-9]+' || echo "")
+	# Extract task ID - look for "Created task: <id>" or "task: <id>" in mnto output
+	task_id=$(echo "${mnto_output}" | grep -oE 'Created task: [a-z0-9]+' | grep -oE '[a-z0-9]+$' || echo "")
 
 	# Write output on success path
 	echo "${mnto_output}" >"${scenario_dir}/output.txt"
