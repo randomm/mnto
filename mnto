@@ -40,6 +40,9 @@ source "$SCRIPT_DIR/lib/harness.bash"
 DRY_RUN="${DRY_RUN:-false}"
 VIPUNE_ENABLED="${VIPUNE_ENABLED:-false}"
 PLAN_MODEL="${PLAN_MODEL:-apfel}"
+CLEAN_MODE="${CLEAN_MODE:-false}"
+PRUNE_MODE="${PRUNE_MODE:-false}"
+CLEAN_DAYS="${CLEAN_DAYS:-30}"
 
 usage() {
 	cat <<EOF
@@ -49,10 +52,14 @@ Commands:
   mnto "goal"           Create and run new task
   mnto --resume {tid}   Resume existing task from last state
   mnto --list           List tasks with goal snippets and status
+  mnto --clean [--days N] [--dry-run]
+                        Remove tasks older than N days (default: 30)
+  mnto --prune [--dry-run]
+                        Remove completed tasks only (have output)
 
 Options:
   -h, --help            Show this help
-  --dry-run             Show prompts without calling apfel
+  --dry-run             Show actions without executing (also --clean, --prune)
   --plan-model {url}    Use external model (curl to URL or command)
   --vipune              Enable vipune semantic search integration
 EOF
@@ -226,6 +233,26 @@ parse_options() {
 			VIPUNE_ENABLED="true"
 			shift
 			;;
+		--clean)
+			CLEAN_MODE="true"
+			shift
+			;;
+		--prune)
+			PRUNE_MODE="true"
+			shift
+			;;
+		--days)
+			if [[ $# -lt 2 ]]; then
+				echo "ERROR: --days requires a number" >&2
+				exit 1
+			fi
+			if ! [[ "$2" =~ ^[0-9]+$ ]]; then
+				echo "ERROR: --days requires a positive integer" >&2
+				exit 1
+			fi
+			CLEAN_DAYS="$2"
+			shift 2
+			;;
 		-*)
 			echo "ERROR: Unknown option: $1" >&2
 			usage
@@ -264,6 +291,12 @@ main() {
 			exit 1
 		fi
 		resume_task "$2"
+		;;
+	--clean)
+		clean_tasks "$CLEAN_DAYS" "$DRY_RUN"
+		;;
+	--prune)
+		prune_completed "$DRY_RUN"
 		;;
 	*)
 		create_task "$1"
