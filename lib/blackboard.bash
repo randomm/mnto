@@ -215,7 +215,7 @@ parse_plan() {
 	local current_id=""
 	local current_content=""
 	local norm_plan=""
-	
+
 	while IFS= read -r line || [[ -n "$line" ]]; do
 		# Check if line starts with a section ID (3 alnum + space/colon)
 		local first_three="${line:0:3}"
@@ -231,7 +231,7 @@ parse_plan() {
 				fi
 				norm_plan+="$current_id $current_content"$'\n'
 			fi
-			
+
 			# Start new section: extract first 3 chars as ID
 			current_id="${line:0:3}"
 			# Extract content after the ID (skip first 4 chars: "AAA:")
@@ -246,7 +246,7 @@ parse_plan() {
 			fi
 		fi
 	done <<<"$plan"
-	
+
 	# Save last section
 	if [[ -n "$current_id" ]]; then
 		current_content=$(echo "$current_content" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/[[:space:]]\+/ /g')
@@ -255,7 +255,7 @@ parse_plan() {
 		fi
 		norm_plan+="$current_id $current_content"$'\n'
 	fi
-	
+
 	# Write normalized plan file (one line per section)
 	printf '%s' "$norm_plan" >"$plan_file"
 
