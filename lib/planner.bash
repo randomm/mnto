@@ -34,7 +34,7 @@ generate_plan() {
 	local goal="$1"
 
 	if [[ "$PLAN_MODEL" == "apfel" ]]; then
-		apfel -s "$SYS_PLAN" -- "$goal" 2>/dev/null || echo ""
+		apfel -s "$SYS_PLAN" "$goal" 2>/dev/null || echo ""
 	else
 		# Future extension point: external model support via PLAN_MODEL
 		echo "ERROR: PLAN_MODEL must be 'apfel' for now" >&2
