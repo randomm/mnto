@@ -192,6 +192,7 @@ validate_plan_format() {
 }
 
 # Parse plan and create subtask structure
+# Handles multi-line apfel output by normalizing to single-line format
 # Usage: parse_plan <plan> <tid>
 parse_plan() {
 	local plan="$1"
@@ -210,8 +211,53 @@ parse_plan() {
 		return 1
 	fi
 
-	# Write plan file
-	echo "$plan" >"$plan_file"
+	# Normalize multi-line plan to single-line format
+	local current_id=""
+	local current_content=""
+	local norm_plan=""
+	
+	while IFS= read -r line || [[ -n "$line" ]]; do
+		# Check if line starts with a section ID (3 alnum + space/colon)
+		local first_three="${line:0:3}"
+		local fourth_char="${line:3:1}"
+		if [[ "$first_three" =~ ^[a-zA-Z0-9]{3}$ ]] && { [[ "$fourth_char" == " " ]] || [[ "$fourth_char" == ":" ]]; }; then
+			# Save previous section if exists
+			if [[ -n "$current_id" ]]; then
+				# Normalize content: single line, no leading/trailing spaces
+				current_content=$(echo "$current_content" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/[[:space:]]\+/ /g')
+				# Truncate to reasonable length
+				if [[ ${#current_content} -gt 60 ]]; then
+					current_content="${current_content:0:60}..."
+				fi
+				norm_plan+="$current_id $current_content"$'\n'
+			fi
+			
+			# Start new section: extract first 3 chars as ID
+			current_id="${line:0:3}"
+			# Extract content after the ID (skip first 4 chars: "AAA:")
+			current_content="${line:4}"
+		else
+			# Accumulate content for current if it's not just whitespace
+			if [[ -n "$current_id" ]] && [[ -n "$line" ]]; then
+				# Trim and add space separator
+				local trimmed
+				trimmed=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+				current_content+=" $trimmed"
+			fi
+		fi
+	done <<<"$plan"
+	
+	# Save last section
+	if [[ -n "$current_id" ]]; then
+		current_content=$(echo "$current_content" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/[[:space:]]\+/ /g')
+		if [[ ${#current_content} -gt 60 ]]; then
+			current_content="${current_content:0:60}..."
+		fi
+		norm_plan+="$current_id $current_content"$'\n'
+	fi
+	
+	# Write normalized plan file (one line per section)
+	printf '%s' "$norm_plan" >"$plan_file"
 
 	# Initialize status file with waiting state
 	while IFS=' ' read -r id rest; do
