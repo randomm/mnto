@@ -70,7 +70,7 @@ mnto/
 │   ├── setup.bats        # Shared fixtures
 │   ├── integration.bats  # End-to-end tests
 │   └── harness.bats      # Loop logic tests
-├── .bb/                  # Runtime state (blackboard, gitignored)
+├── .mnto/bb/             # Runtime state (blackboard, gitignored)
 ├── README.md             # This file
 └── AGENTS.md             # Agent guidelines and conventions
 ```

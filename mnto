@@ -7,7 +7,15 @@ set -euo pipefail
 # SCRIPT_DIR can be overridden via env for testing
 SCRIPT_DIR="${SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 readonly SCRIPT_DIR
-readonly BB_DIR=".bb"
+readonly BB_DIR=".mnto/bb"
+
+# Backward compatibility: detect existing .bb/ and migrate
+if [[ -d ".bb" ]] && [[ -n "$(ls -A .bb 2>/dev/null)" ]] && [[ ! -d ".mnto/bb" ]]; then
+	echo "WARNING: Found existing .bb/ tasks. Migrating to .mnto/bb/..."
+	mkdir -p .mnto
+	mv .bb .mnto/bb
+	echo "Migration complete. Your tasks are now in .mnto/bb/"
+fi
 
 # Source library functions
 source "$SCRIPT_DIR/lib/blackboard.bash"
