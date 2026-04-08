@@ -12,6 +12,13 @@ teardown() {
 	rm -rf "$TEST_BB_DIR"
 }
 
+# Source all harness dependencies in correct order
+source_harness() {
+	source "$MNTO/lib/blackboard.bash"
+	source "$MNTO/lib/planner.bash"
+	source "$MNTO/lib/harness.bash"
+}
+
 # ============ Resume Feature Tests ============
 
 @test "resume finds next waiting subtask" {
@@ -119,7 +126,7 @@ teardown() {
 
 @test "draft_subtask in dry-run does not create draft file" {
 	DRY_RUN="true"
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/dry/abc"
 	echo "Goal" >"$BB_DIR/dry/g"
@@ -148,7 +155,7 @@ teardown() {
 
 @test "draft_subtask in dry-run prints context to stderr" {
 	DRY_RUN="true"
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/dry/abc"
 	echo "Goal" >"$BB_DIR/dry/g"
@@ -230,7 +237,7 @@ mock_apfel() {
 
 @test "assemble_context includes vipune results when enabled" {
 	VIPUNE_ENABLED="true"
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/vip/abc"
 
@@ -252,7 +259,7 @@ mock_apfel() {
 
 @test "assemble_context omits vipune results when disabled" {
 	VIPUNE_ENABLED="false"
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/nvp/abc"
 
@@ -273,7 +280,7 @@ mock_apfel() {
 # ============ Colored Output Feature Tests ============
 
 @test "print_status shows PASS with checkmark symbol" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	run print_status "PASS" "Test passed"
 	[[ "$output" == *"✓ PASS"* ]]
@@ -281,7 +288,7 @@ mock_apfel() {
 }
 
 @test "print_status shows RETRY with symbol" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	run print_status "RETRY" "Try again"
 	[[ "$output" == *"⟳ RETRY"* ]]
@@ -289,7 +296,7 @@ mock_apfel() {
 }
 
 @test "print_status shows FAIL with symbol" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	run print_status "FAIL" "Test failed"
 	[[ "$output" == *"✗ FAIL"* ]]
@@ -297,7 +304,7 @@ mock_apfel() {
 }
 
 @test "print_status shows INFO with symbol" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	run print_status "INFO" "Info message"
 	[[ "$output" == *"➤ INFO"* ]]
@@ -317,7 +324,7 @@ mock_apfel() {
 # ============ Integration: Full Resume Flow ============
 
 @test "run_harness completes interrupted workflow" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/res/abc" "$BB_DIR/res/def"
 	echo "Goal" >"$BB_DIR/res/g"
@@ -346,7 +353,7 @@ mock_apfel() {
 
 @test "stitch_task in dry-run shows info but creates output" {
 	DRY_RUN="true"
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/dry/abc" "$BB_DIR/dry/def"
 	echo "abc Intro: Overview" >"$BB_DIR/dry/p"

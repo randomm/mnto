@@ -31,6 +31,12 @@ if [[ -d ".bb" ]] && [[ ! -L ".bb" ]] && [[ -n "$(ls -A .bb 2>/dev/null)" ]] && 
 	echo "Migration complete. Your tasks are now in .mnto/bb/"
 fi
 
+# Dependency tree:
+# mnto
+# ├── blackboard.bash
+# ├── planner.bash
+# └── harness.bash (depends on: blackboard.bash, planner.bash)
+
 # Source library functions
 source "$SCRIPT_DIR/lib/blackboard.bash"
 source "$SCRIPT_DIR/lib/planner.bash"
