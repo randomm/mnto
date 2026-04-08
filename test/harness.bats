@@ -356,6 +356,16 @@ mock_apfel() {
 	echo "First section content" >"$BB_DIR/tst/abc/f"
 	echo "Second section content" >"$BB_DIR/tst/def/f"
 
+	# Mock apfel for stitching task
+	# NOTE: This returns the last argument (the content buffer), which is what
+	# apfel -q -s "$SYS_STITCH" "$buffer" receives as its final argument.
+	# This assumes stitch_task passes content unchanged through apfel, which
+	# is sufficient for testing the concatenation flow.
+	apfel() {
+		# Return the last argument (the content to stitch)
+		echo "${@: -1}"
+	}
+
 	stitch_task "tst"
 
 	[ -f "$BB_DIR/tst/out" ]
