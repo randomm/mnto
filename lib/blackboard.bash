@@ -2,6 +2,10 @@
 # Blackboard operations for mnto
 set -euo pipefail
 
+# Idempotency guard — prevent double-sourcing
+[[ -n "${_BLACKBOARD_SOURCED:-}" ]] && return 0
+declare -r _BLACKBOARD_SOURCED=1
+
 # ANSI terminal colours (used in harness.bash via source)
 # shellcheck disable=SC2034
 readonly C_RESET='\033[0m'
