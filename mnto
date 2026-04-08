@@ -36,10 +36,12 @@ fi
 # ├── blackboard.bash
 # ├── planner.bash
 # ├── harness.bash (depends on: blackboard.bash, planner.bash)
-# └── stitcher.bash (depends on: blackboard.bash, planner.bash)
+# ├── stitcher.bash (depends on: blackboard.bash, planner.bash)
+# └── maintenance.bash (depends on: blackboard.bash)
 
 # Source library functions
 source "$SCRIPT_DIR/lib/blackboard.bash"
+source "$SCRIPT_DIR/lib/maintenance.bash"
 source "$SCRIPT_DIR/lib/planner.bash"
 source "$SCRIPT_DIR/lib/harness.bash"
 source "$SCRIPT_DIR/lib/stitcher.bash"

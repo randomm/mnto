@@ -7,9 +7,23 @@ set -euo pipefail
 declare -r _PLANNER_SOURCED=1
 
 # System prompts for apfel
-readonly SYS_PLAN="Decompose the goal into 3-8 sections. Output one line per section:
-{id} {label}: {description}, {word limit}
-IDs: lowercase alphanumeric, 3 chars. No other output."
+readonly SYS_PLAN="Decompose the goal into 3-8 sections. Output EXACTLY in this format — one line per section:
+
+abc overview: Brief description, 100 words
+def install: How to install, 150 words
+ghi usage: How to use it, 200 words
+
+Rules:
+- Each line: 3-char lowercase ID, then label, then colon, then description, then comma, then word count and 'words'
+- NO markdown, NO headers, NO code fences, NO bullet points, NO extra text
+- Output ONLY the plan lines — nothing before or after"
+
+# System prompt for restructuring apfel output (two-pass fallback)
+readonly SYS_RESTRUCTURE="You are a section formatter. Given the following text, restructure it into exactly this format — one line per section:
+
+abc label: description, NNN words
+
+Each line MUST start with a 3-char lowercase ID (like abc, def, ghi). After the ID: a label word, then a colon, then a brief description, then a comma, then a word count and the word 'words'. Output ONLY the plan lines — nothing else."
 
 # shellcheck disable=SC2034
 readonly SYS_DRAFT="Write the section described in TASK. Follow the word limit.
@@ -42,9 +56,11 @@ generate_plan() {
 		if [[ "$goal" == -* ]]; then
 			goal=$'\n'"$goal"
 		fi
+
+		local exit_code=0
 		local raw_output
-		raw_output="$(apfel -q -s "$SYS_PLAN" "$goal")"
-		local exit_code=$?
+
+		raw_output="$(apfel -q -s "$SYS_PLAN" "$goal" 2>/dev/null)" || exit_code=$?
 
 		# Handle apfel exit codes
 		if ((exit_code == 3)); then
@@ -61,10 +77,55 @@ generate_plan() {
 			return 1
 		fi
 
-		# Normalize output and return
 		local normalized
 		normalized="$(echo "$raw_output" | normalize_plan_output)"
-		echo "$normalized"
+
+		# Check if we got enough valid lines
+		local line_count
+		line_count="$(echo "$normalized" | grep -c '.' || true)"
+
+		if ((line_count >= 3)); then
+			# Add missing word counts and return
+			local filled
+			filled="$(fill_missing_word_counts "$normalized")"
+			echo "$filled"
+			return 0
+		fi
+
+		# Pass 2: Two-pass fallback — ask apfel to restructure its own output
+		echo "WARNING: Initial plan normalization produced ${line_count} lines, attempting restructure" >&2
+
+		local restructure_exit_code=0
+		local restructured
+		restructured="$(apfel -q -s "$SYS_RESTRUCTURE" "$raw_output" 2>/dev/null)" || restructure_exit_code=$?
+
+		if ((restructure_exit_code == 3)); then
+			echo "ERROR: apfel guardrail blocked restructure" >&2
+			echo ""
+			return 3
+		elif ((restructure_exit_code == 4)); then
+			echo "ERROR: apfel context overflow during restructure" >&2
+			echo ""
+			return 4
+		elif ((restructure_exit_code != 0)); then
+			echo "ERROR: apfel failed restructure with exit code $restructure_exit_code" >&2
+			echo ""
+			return 1
+		fi
+
+		normalized="$(echo "$restructured" | normalize_plan_output)"
+
+		line_count="$(echo "$normalized" | grep -c '.' || true)"
+		if ((line_count >= 3)); then
+			local filled
+			filled="$(fill_missing_word_counts "$normalized")"
+			echo "$filled"
+			return 0
+		fi
+
+		echo "ERROR: Could not generate valid plan after two attempts" >&2
+		echo ""
+		return 1
 	else
 		# Future extension point: external model support via PLAN_MODEL
 		echo "ERROR: PLAN_MODEL must be 'apfel' for now" >&2

@@ -23,35 +23,26 @@ setup() {
 set -euo pipefail
 
 apfel() {
-  # Mock apfel for testing - simple pattern matching
-  case "\$1" in
-  -q)
-  	# Check if any argument contains "section" (from SYS_PLAN content)
-  	for arg; do
-  		if [[ "\$arg" == *"section"* ]] || [[ "\$arg" == *"SYS_PLAN"* ]]; then
-  			echo "abc Introduction: An overview of the project, 100 words"
-  			echo "def Body: Main content, 150 words"
-  			echo "ghi Conclusion: Summary and next steps, 50 words"
-  			return 0
-  		fi
-  	done
-  	# Default response for other requests (SYS_DRAFT, SYS_VERIFY, SYS_STITCH)
-  	echo "PASS"
-  	return 0
-  	;;
-  -p)
-  	echo "abc Introduction: An overview of the project, 100 words"
-  	echo "def Body: Main content, 150 words"
-  	echo "ghi Conclusion: Summary and next steps, 50 words"
-  	return 0
-  	;;
-  *)
-  	# Fallback
-  	echo "mock response"
-  	return 0
-  	;;
-  esac
- }
+  local sys_prompt="$3"
+  # If this is a restructuring call (second pass), return structured format
+  if [[ "$sys_prompt" == *"Restructure"* ]] || [[ "$sys_prompt" == *"restructure"* ]]; then
+    echo "abc overview: Brief description, 100 words"
+    echo "def install: How to install, 150 words"
+    echo "ghi usage: How to use it, 200 words"
+    echo "jkl conclusion: Summary and next steps, 50 words"
+  else
+    # First call - return markdown (simulating real apfel behavior)
+    echo "## Introduction"
+    echo "This is a bash tool for task planning."
+    echo ""
+    echo "## Installation"
+    echo "Install with brew install mnto"
+    echo ""
+    echo "## Usage"
+    echo "Run ./mnto with a goal"
+  fi
+  return 0
+}
 
 source "\$SCRIPT_DIR/lib/blackboard.bash"
 source "\$SCRIPT_DIR/lib/planner.bash"
@@ -136,7 +127,7 @@ teardown() {
 	# Verify task directory exists via list
 	run "$TEST_MNTO" --list
 	[[ $status -eq 0 ]]
-	[[ "$output" == *[a-zA-Z0-9][a-zA-Z0-9][a-zA-Z0-9]* ]]
+	[[ "$output" == *[a-z0-9][a-z0-9][a-z0-9]* ]]
 }
 
 @test "mnto --list shows tasks" {
@@ -148,6 +139,7 @@ teardown() {
 	run "$TEST_MNTO" --list
 	[[ $status -eq 0 ]]
 	[[ "${#lines[@]}" -ge 2 ]]
+	[[ "${lines[0]}" =~ ^[a-z0-9]{3}$ ]] || [[ "${lines[1]}" =~ ^[a-z0-9]{3}$ ]]
 }
 
 @test "mnto --resume fails for non-existent task" {
@@ -159,22 +151,22 @@ teardown() {
 @test "mnto --resume existing task" {
 	run "$TEST_MNTO" "Test task"
 	[[ $status -eq 0 ]]
-	# Extract task ID from "Created task: XYZ" where XYZ is exactly 3 alphanumeric
+	# Extract task ID from "Created task: XYZ" where XYZ is exactly 3 lowercase alphanumeric
 	local tid="${lines[0]}"
 	tid="${tid##*Created task: }"
-	[[ "$tid" =~ ^[a-zA-Z0-9]{3}$ ]] || return 1
+	[[ "$tid" =~ ^[a-z0-9]{3}$ ]] || return 1
 
 	run "$TEST_MNTO" --resume "$tid"
 	[[ $status -eq 0 ]]
 	[[ "$output" == *"Resuming task: $tid"* ]]
 }
 
-@test "gen_id produces 3-character IDs" {
+@test "gen_id produces 3-character lowercase IDs" {
 	source "$MNTO/lib/blackboard.bash"
 	local id
 	id="$(gen_id)"
 	[ ${#id} -eq 3 ]
-	[[ "$id" =~ ^[a-zA-Z0-9]{3}$ ]]
+	[[ "$id" =~ ^[a-z0-9]{3}$ ]]
 }
 
 @test "next_task returns first waiting subtask" {
@@ -299,4 +291,80 @@ ghi Conclusion: Summary, 50 words"
 	[[ "$result" == *"abc Task 1"* ]]
 	[[ "$result" == *"def Task 2"* ]]
 	[[ "$result" == *"ghi Task 3"* ]]
+}
+
+@test "normalize_plan_output handles id1-style IDs" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result=$(printf 'id1 introduction: Welcome to the guide\nid2 setup: How to get started\nid3 usage: How to use it\n' | normalize_plan_output)
+	# Should assign proper 3-char IDs (abc, def, ghi)
+	[[ "$result" == *"abc introduction"* ]]
+	[[ "$result" == *"def setup"* ]]
+	[[ "$result" == *"ghi usage"* ]]
+}
+
+@test "normalize_plan_output extracts markdown headers" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result=$(printf '## Introduction\n## Installation\n## Usage\n' | normalize_plan_output)
+	# Should convert headers to plan lines with IDs
+	[[ "$result" == *"abc Introduction"* ]]
+	[[ "$result" == *"def Installation"* ]]
+	[[ "$result" == *"ghi Usage"* ]]
+}
+
+@test "normalize_plan_output handles colon without word count" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result=$(printf 'abc Introduction: Brief overview\n' | normalize_plan_output)
+	# Should preserve the line even without word count
+	[[ "$result" == *"abc Introduction: Brief overview"* ]]
+}
+
+@test "fill_missing_word_counts adds defaults" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result=$(fill_missing_word_counts "abc Intro: Overview without count")
+	[[ "$result" == *"abc Intro: Overview without count, 100 words"* ]]
+}
+
+@test "fill_missing_word_counts preserves existing word counts" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result=$(fill_missing_word_counts "abc Intro: Overview, 150 words")
+	[[ "$result" == *"abc Intro: Overview, 150 words"* ]]
+	[[ "$result" != *"100 words"* ]]
+}
+
+@test "generate_plan handles two-pass fallback" {
+	source "$MNTO/lib/blackboard.bash"
+	source "$MNTO/lib/planner.bash"
+
+	# Mock apfel to return markdown first, then structured format
+	apfel() {
+		local apfel_call_count="${APEFEL_CALL_COUNT:-0}"
+		((apfel_call_count++)) || true
+		export APEFEL_CALL_COUNT="$apfel_call_count"
+
+		if (( apfel_call_count == 1 )); then
+			# First call (plan): return markdown headers
+			echo "## Introduction"
+			echo "## Installation"
+			echo "## Usage"
+		else
+			# Second call (restructure): return proper format
+			echo "abc Introduction: Brief overview, 100 words"
+			echo "def Installation: How to install, 150 words"
+			echo "ghi Usage: How to use it, 200 words"
+		fi
+		return 0
+	}
+
+	local result
+	result="$(generate_plan "Write a guide" 2>/dev/null || true)"
+
+	# Should have used two-pass and returned valid plan
+	[[ "$result" == *"abc Introduction"* ]]
+	[[ "$result" == *"def Installation"* ]]
+	[[ "$result" == *"ghi Usage"* ]]
 }
