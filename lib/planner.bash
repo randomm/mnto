@@ -2,6 +2,10 @@
 # Task planning functions for mnto
 set -euo pipefail
 
+# Idempotency guard — prevent double-sourcing
+[[ -n "${_PLANNER_SOURCED:-}" ]] && return 0
+declare -r _PLANNER_SOURCED=1
+
 # System prompts for apfel
 readonly SYS_PLAN="Decompose the goal into 3-8 sections. Output one line per section:
 {id} {label}: {description}, {word limit}
