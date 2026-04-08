@@ -92,8 +92,12 @@ collect_scenario_metrics() {
 		return 1
 	}
 
-	# Extract task ID - mnto outputs "Created task: XXX"
-	task_id=$(echo "${mnto_output}" | grep -oE 'Created task: [a-z0-9]{3}\b' | grep -oE '[a-z0-9]{3}' || echo "")
+	# Extract task ID using BASH_REMATCH to avoid matching unrelated 3-char strings
+	if [[ "${mnto_output}" =~ Created\ task:\ ([a-z0-9]{3}) ]]; then
+		task_id="${BASH_REMATCH[1]}"
+	else
+		task_id=""
+	fi
 
 	# Validate task ID format before filesystem use (must match validate_id() format)
 	if [[ ! "$task_id" =~ ^[a-z0-9]{3}$ ]]; then
