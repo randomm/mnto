@@ -12,13 +12,20 @@ teardown() {
 	rm -rf "$TEST_BB_DIR"
 }
 
+# Source all harness dependencies in correct order
+source_harness() {
+	source "$MNTO/lib/blackboard.bash"
+	source "$MNTO/lib/planner.bash"
+	source "$MNTO/lib/harness.bash"
+}
+
 # Mock apfel for testing
 mock_apfel() {
 	echo "mock draft response"
 }
 
 @test "assemble_context creates context file" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "Write a comprehensive guide" >"$BB_DIR/tst/g"
@@ -30,7 +37,7 @@ mock_apfel() {
 }
 
 @test "assemble_context includes goal" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "Test goal content" >"$BB_DIR/tst/g"
@@ -44,7 +51,7 @@ mock_apfel() {
 }
 
 @test "assemble_context includes plan line" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "Some goal" >"$BB_DIR/tst/g"
@@ -58,7 +65,7 @@ mock_apfel() {
 }
 
 @test "assemble_context includes previous output when exists" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc" "$BB_DIR/tst/def"
 	echo "Previous section content" >"$BB_DIR/tst/abc/f"
@@ -75,7 +82,7 @@ mock_apfel() {
 }
 
 @test "assemble_context includes critique when exists (retry)" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "Goal" >"$BB_DIR/tst/g"
@@ -91,21 +98,21 @@ mock_apfel() {
 }
 
 @test "assemble_context validates task ID" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	run assemble_context "xx" "abc"
 	[ "$status" -ne 0 ]
 }
 
 @test "assemble_context validates subtask ID" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	run assemble_context "tst" "zz"
 	[ "$status" -ne 0 ]
 }
 
 @test "draft_subtask calls apfel and creates draft file" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "Goal" >"$BB_DIR/tst/g"
@@ -135,7 +142,7 @@ mock_apfel() {
 }
 
 @test "draft_subtask updates status to d" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "Goal" >"$BB_DIR/tst/g"
@@ -159,7 +166,7 @@ mock_apfel() {
 }
 
 @test "draft_subtask fails if context missing" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "abc - 0" >"$BB_DIR/tst/s"
@@ -169,7 +176,7 @@ mock_apfel() {
 }
 
 @test "draft_subtask handles apfel failure" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "Goal" >"$BB_DIR/tst/g"
@@ -193,7 +200,7 @@ mock_apfel() {
 }
 
 @test "draft_subtask validates IDs" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	run draft_subtask "xx" "abc"
 	[ "$status" -ne 0 ]
@@ -205,7 +212,7 @@ mock_apfel() {
 # ============ Part 2: Verify and Retry Tests ============
 
 @test "verify_subtask promotes draft to final on PASS" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "Some goal" >"$BB_DIR/tst/g"
@@ -228,7 +235,7 @@ mock_apfel() {
 }
 
 @test "verify_subtask creates critique on FAIL" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "Some goal" >"$BB_DIR/tst/g"
@@ -255,7 +262,7 @@ mock_apfel() {
 }
 
 @test "verify_subtask handles apfel failure" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "Goal" >"$BB_DIR/tst/g"
@@ -272,7 +279,7 @@ mock_apfel() {
 }
 
 @test "verify_subtask validates IDs" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	run verify_subtask "xx" "abc"
 	[ "$status" -ne 0 ]
@@ -282,7 +289,7 @@ mock_apfel() {
 }
 
 @test "verify_subtask fails if draft missing" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "abc d 0" >"$BB_DIR/tst/s"
@@ -292,7 +299,7 @@ mock_apfel() {
 }
 
 @test "handle_retry increments count on retry" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "abc c 1" >"$BB_DIR/tst/s"
@@ -310,7 +317,7 @@ mock_apfel() {
 }
 
 @test "handle_retry accepts draft after max retries" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "abc c 3" >"$BB_DIR/tst/s"
@@ -328,7 +335,7 @@ mock_apfel() {
 }
 
 @test "handle_retry validates IDs" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	run handle_retry "xx" "abc" 3
 	[ "$status" -ne 0 ]
@@ -340,7 +347,7 @@ mock_apfel() {
 # ============ Part 3: Stitch and Main Loop Tests ============
 
 @test "stitch_task combines final drafts" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc" "$BB_DIR/tst/def"
 	echo "abc Introduction: Overview" >"$BB_DIR/tst/p"
@@ -358,7 +365,7 @@ mock_apfel() {
 }
 
 @test "stitch_task uses apfel when under 3000 chars" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "abc Short: Brief section" >"$BB_DIR/tst/p"
@@ -380,7 +387,7 @@ mock_apfel() {
 }
 
 @test "stitch_task concatenates directly when over 3000 chars" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "abc Long: Detailed section" >"$BB_DIR/tst/p"
@@ -403,7 +410,7 @@ mock_apfel() {
 }
 
 @test "run_harness processes all subtasks" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc" "$BB_DIR/tst/def" "$BB_DIR/tst/ghi"
 	echo "abc Intro: Overview" >"$BB_DIR/tst/p"
@@ -425,7 +432,7 @@ mock_apfel() {
 }
 
 @test "run_harness handles retry loop" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "abc Section: Details" >"$BB_DIR/tst/p"
@@ -455,7 +462,7 @@ mock_apfel() {
 }
 
 @test "run_harness accepts unverified after max retries" {
-	source "$MNTO/lib/harness.bash"
+	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "abc Section: Details" >"$BB_DIR/tst/p"

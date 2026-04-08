@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Draft-verify harness for mnto
-set -euo pipefail
 
-# Source dependencies
-# shellcheck disable=SC1091
-source "$(dirname "${BASH_SOURCE[0]}")/blackboard.bash"
-# shellcheck disable=SC1091
-source "$(dirname "${BASH_SOURCE[0]}")/planner.bash"
+# Dependency guard — must source blackboard.bash and planner.bash first
+if [[ "${_BLACKBOARD_SOURCED:-}" != "1" ]] || [[ "${_PLANNER_SOURCED:-}" != "1" ]]; then
+	echo "ERROR: harness.bash requires blackboard.bash and planner.bash to be sourced first" >&2
+	# shellcheck disable=SC2317
+	return 1 2>/dev/null || exit 1
+fi
+
+set -euo pipefail
 
 # Harness options (can be overridden)
 DRY_RUN="${DRY_RUN:-false}"
