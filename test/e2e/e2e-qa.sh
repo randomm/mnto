@@ -7,6 +7,8 @@ set -euo pipefail
 # Script directory for reliable path resolution
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+readonly PROJECT_ROOT
 readonly SCENARIOS_DIR="$SCRIPT_DIR/scenarios"
 readonly RESULTS_DIR="$SCRIPT_DIR/results"
 
@@ -85,16 +87,19 @@ collect_scenario_metrics() {
 	local task_id
 	local mnto_output
 
-	mnto_output=$(./mnto "$(cat "${scenario_path}")" 2>&1) || {
+	mnto_output=$("$PROJECT_ROOT/mnto" "$(cat "${scenario_path}")" 2>&1) || {
 		log "ERROR: mnto failed with exit code $?"
 		return 1
 	}
 
 	# Extract task ID - look for "task:" prefix in mnto output
-	task_id=$(echo "${mnto_output}" | grep -oE 'task: [a-z0-9]+' | grep -oE '[a-z0-9]+' || echo "")
+	task_id=$(echo "${mnto_output}" | grep -oE 'task: [a-zA-Z0-9]+' | grep -oE '[a-zA-Z0-9]+' || echo "")
 
-	# Write output on success path
-	echo "${mnto_output}" >"${scenario_dir}/output.txt"
+	# Validate task ID format before filesystem use
+	if [[ ! "$task_id" =~ ^[a-zA-Z0-9]+$ ]]; then
+		log "ERROR: Invalid task ID format: $task_id"
+		return 1
+	fi
 
 	# Validate task ID before using it
 	if [[ -z "$task_id" ]]; then
@@ -102,8 +107,11 @@ collect_scenario_metrics() {
 		return 1
 	fi
 
+	# Write output on success path
+	echo "${mnto_output}" >"${scenario_dir}/output.txt"
+
 	# Collect metrics from blackboard if available
-	local bb_dir="${BB_DIR:-.mnto/bb}"
+	local bb_dir="${BB_DIR:-$PROJECT_ROOT/.mnto/bb}"
 	if [[ -d "$bb_dir/${task_id}" ]]; then
 		# Count apfel calls by counting lines in status file
 		if [[ -f "$bb_dir/${task_id}/s" ]]; then
@@ -235,8 +243,8 @@ main() {
 	done
 
 	# Check dependencies
-	if ! command -v ./mnto &>/dev/null; then
-		echo "ERROR: mnto not found in current directory"
+	if [[ ! -x "$PROJECT_ROOT/mnto" ]]; then
+		echo "ERROR: mnto not found at $PROJECT_ROOT/mnto"
 		exit 1
 	fi
 
