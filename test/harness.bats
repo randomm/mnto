@@ -17,6 +17,7 @@ source_harness() {
 	source "$MNTO/lib/blackboard.bash"
 	source "$MNTO/lib/planner.bash"
 	source "$MNTO/lib/harness.bash"
+	source "$MNTO/lib/stitcher.bash"
 }
 
 # Mock apfel for testing

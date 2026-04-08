@@ -17,6 +17,7 @@ source_harness() {
 	source "$MNTO/lib/blackboard.bash"
 	source "$MNTO/lib/planner.bash"
 	source "$MNTO/lib/harness.bash"
+	source "$MNTO/lib/stitcher.bash"
 }
 
 # ============ Resume Feature Tests ============
@@ -184,9 +185,9 @@ mock_apfel() {
 # ============ Generate Plan Tests ============
 
 @test "generate_plan respects PLAN_MODEL=apfel" {
+	source "$MNTO/lib/blackboard.bash"
 	source "$MNTO/lib/planner.bash"
 
-	# Define apfel function to mock the command
 	apfel() {
 		echo "abc Plan: Test plan"
 	}

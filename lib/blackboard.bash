@@ -174,6 +174,16 @@ read_plan_line() {
 	return 1
 }
 
+# Normalize apfel output to extract plan lines
+# Strips markdown fences, ANSI codes, numbered prefixes, and leading whitespace
+# Usage: normalized_output="$(echo "$raw_output" | normalize_plan_output)"
+normalize_plan_output() {
+	local input
+	input="$(cat)"
+
+	echo "$input" | sed '/^```/d' | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' | sed 's/^[[:space:]]*//' | sed '/^$/d' | sed 's/^[0-9]\{1,2\}[.)][[:space:]]*//' | sed 's/^[*-][[:space:]]*//' | grep -E '^[a-zA-Z0-9]{3}[^a-zA-Z0-9]' || true
+}
+
 # Validate plan format before parsing (security)
 validate_plan_format() {
 	local plan="$1"
@@ -182,22 +192,38 @@ validate_plan_format() {
 		return 1
 	fi
 
-	# Filter empty lines and check minimum count (3 lines required per SYS_PLAN)
-	local non_empty_lines=0
+	# Count raw non-empty lines before normalization (for warning)
+	local raw_count
+	raw_count="$(echo "$plan" | grep -c '.' || true)"
+
+	# Normalize the plan first to handle apfel's formatting
+	plan="$(echo "$plan" | normalize_plan_output)"
+
+	# Warn if normalization filtered lines
+	local norm_count
+	norm_count="$(echo "$plan" | grep -c '.' || true)"
+
+	if ((raw_count > norm_count)); then
+		echo "WARNING: $((raw_count - norm_count)) lines filtered during normalization" >&2
+	fi
+
+	local count=0
 	while IFS= read -r line; do
-		if [[ -z "$line" ]]; then
-			continue
-		fi
-		((non_empty_lines++)) || true
-		if [[ ! "$line" =~ ^[a-zA-Z0-9]{3} ]]; then
-			echo "ERROR: Invalid plan format: $line" >&2
+		[[ -z "$line" ]] && continue
+		((count++))
+		# Validate full format: "abc label: description, 100 words"
+		if [[ ! "$line" =~ ^[a-zA-Z0-9]{3}[[:space:]]+[^:]+:[^,]+,[[:space:]]*[0-9]+[[:space:]]*words?$ ]]; then
+			echo "ERROR: Invalid plan format on line $count: $line" >&2
+			echo "  Expected: idN label: description, NNN words" >&2
 			return 1
 		fi
 	done <<<"$plan"
-	if ((non_empty_lines < 3)); then
-		echo "ERROR: Plan must have at least 3 sections (got $non_empty_lines)" >&2
+
+	if ((count < 3)); then
+		echo "ERROR: Plan needs at least 3 sections, got $count" >&2
 		return 1
 	fi
+
 	return 0
 }
 
@@ -227,6 +253,11 @@ parse_plan() {
 	while IFS=' ' read -r id rest; do
 		if [[ -z "$id" ]]; then
 			continue
+		fi
+		# Validate ID is exactly 3 alphanumeric chars before creating directory
+		if [[ ! "$id" =~ ^[a-zA-Z0-9]{3}$ ]]; then
+			echo "ERROR: Invalid task ID: $id (must be exactly 3 alphanumeric chars)" >&2
+			return 1
 		fi
 		echo "$id - 0"
 		mkdir -p "$bb_dir/$id"

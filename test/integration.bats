@@ -23,23 +23,35 @@ setup() {
 set -euo pipefail
 
 apfel() {
-	case "\$1" in
-	-p)
-		echo "abc Introduction: An overview of the project, 100 words"
-		echo "def Body: Main content, 150 words"
-		echo "ghi Conclusion: Summary and next steps, 50 words"
-		;;
-	-s)
-		# Return plan format for SYS_PLAN
-		echo "abc Introduction: An overview of the project, 100 words"
-		echo "def Body: Main content, 150 words"
-		echo "ghi Conclusion: Summary and next steps, 50 words"
-		;;
-	*)
-		echo "mock response"
-		;;
-	esac
-}
+  # Mock apfel for testing - simple pattern matching
+  case "\$1" in
+  -q)
+  	# Check if any argument contains "section" (from SYS_PLAN content)
+  	for arg; do
+  		if [[ "\$arg" == *"section"* ]] || [[ "\$arg" == *"SYS_PLAN"* ]]; then
+  			echo "abc Introduction: An overview of the project, 100 words"
+  			echo "def Body: Main content, 150 words"
+  			echo "ghi Conclusion: Summary and next steps, 50 words"
+  			return 0
+  		fi
+  	done
+  	# Default response for other requests (SYS_DRAFT, SYS_VERIFY, SYS_STITCH)
+  	echo "PASS"
+  	return 0
+  	;;
+  -p)
+  	echo "abc Introduction: An overview of the project, 100 words"
+  	echo "def Body: Main content, 150 words"
+  	echo "ghi Conclusion: Summary and next steps, 50 words"
+  	return 0
+  	;;
+  *)
+  	# Fallback
+  	echo "mock response"
+  	return 0
+  	;;
+  esac
+ }
 
 source "\$SCRIPT_DIR/lib/blackboard.bash"
 source "\$SCRIPT_DIR/lib/planner.bash"
@@ -240,4 +252,51 @@ ghi Conclusion: Summary, 50 words"
 	[[ "$status_content" =~ "abc - 0" ]]
 	[[ "$status_content" =~ "def - 0" ]]
 	[[ "$status_content" =~ "ghi - 0" ]]
+}
+
+@test "normalize_plan_output strips markdown fences" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	# Simply verify that lines starting with ``` are removed
+	result=$(printf '%s\n%s\n' '```' 'abc Intro: Overview, 100 words' | normalize_plan_output)
+	# Should only contain the abc line, not the backticks
+	[[ "$result" == *"abc Intro: Overview, 100 words"* ]]
+}
+
+@test "normalize_plan_output removes numbered prefixes" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result="$(echo '1. abc Intro: Overview, 100 words' | normalize_plan_output)"
+	[[ "$result" == *"abc Intro: Overview, 100 words"* ]]
+}
+
+@test "normalize_plan_output removes bullet list prefixes" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result="$(echo '- abc Intro: Overview, 100 words' | normalize_plan_output)"
+	[[ "$result" == *"abc Intro: Overview, 100 words"* ]]
+}
+
+@test "normalize_plan_output preserves valid plan lines" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result="$(echo 'abc Intro: Overview, 100 words' | normalize_plan_output)"
+	[[ "$result" == *"abc Intro: Overview, 100 words"* ]]
+}
+
+@test "normalize_plan_output filters non-plan lines" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result="$(printf 'This is not a plan line\nabc Intro: Overview, 100 words\n' | normalize_plan_output)"
+	[[ "$result" == *"abc Intro: Overview, 100 words"* ]]
+	[[ "$result" != *"This is not a plan line"* ]]
+}
+
+@test "normalize_plan_output handles mixed input" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result=$(printf '1. abc Task 1\n- def Task 2\nghi Task 3\n' | normalize_plan_output)
+	[[ "$result" == *"abc Task 1"* ]]
+	[[ "$result" == *"def Task 2"* ]]
+	[[ "$result" == *"ghi Task 3"* ]]
 }
