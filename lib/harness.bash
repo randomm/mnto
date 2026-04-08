@@ -45,6 +45,8 @@ assemble_context() {
 		return 1
 	fi
 
+	# shellcheck disable=SC2153 # BB_DIR is defined in mnto at runtime
+	# shellcheck disable=SC2153 # BB_DIR is defined in mnto at runtime
 	local bb_dir="$BB_DIR/$tid"
 	local ctx_file="$bb_dir/$subtask_id/ctx"
 	local tmp_ctx
@@ -122,6 +124,7 @@ verify_subtask() {
 		return 1
 	fi
 
+	# shellcheck disable=SC2153 # BB_DIR is defined in mnto at runtime
 	local bb_dir="$BB_DIR/$tid"
 	local draft_file="$bb_dir/$subtask_id/d"
 	local critique_file="$bb_dir/$subtask_id/c"
@@ -153,9 +156,19 @@ $spec"
 
 	# Call apfel with SYS_VERIFY
 	local result
+	local exit_code=0
 	if ! result="$(apfel -q -s "$SYS_VERIFY" "$vctx" 2>/dev/null)"; then
-		echo "ERROR: apfel failed for subtask $subtask_id" >&2
-		return 1
+		exit_code=$?
+		if ((exit_code == 3)); then
+			echo "ERROR: apfel guardrail blocked verification for subtask $subtask_id" >&2
+			return 1
+		elif ((exit_code == 4)); then
+			echo "ERROR: apfel context overflow during verification for subtask $subtask_id" >&2
+			return 1
+		else
+			echo "ERROR: apfel failed for subtask $subtask_id (exit code $exit_code)" >&2
+			return 1
+		fi
 	fi
 
 	# Parse result
@@ -168,8 +181,19 @@ $spec"
 		print_status "PASS" "Subtask $subtask_id verified"
 		return 0
 	else
-		# Extract reason from "FAIL: reason"
-		local reason="${result#FAIL: }"
+		# Extract reason from "FAIL: reason" - more robust parsing
+		local reason=""
+		if [[ "$result" =~ ^FAIL:[[:space:]]*(.+)$ ]]; then
+			reason="${BASH_REMATCH[1]}"
+		else
+			reason="$result"
+		fi
+
+		# Guard against empty or whitespace-only reason
+		if [[ -z "$reason" ]] || [[ "$reason" =~ ^[[:space:]]+$ ]]; then
+			reason="No reason provided"
+		fi
+
 		echo "$reason" >"$critique_file"
 		local retries
 		retries="$(get_retries "$tid" "$subtask_id")"
@@ -217,6 +241,7 @@ handle_retry() {
 		return 1
 	fi
 
+	# shellcheck disable=SC2153 # BB_DIR is defined in mnto at runtime
 	local bb_dir="$BB_DIR/$tid"
 	local draft_file="$bb_dir/$subtask_id/d"
 	local final_file="$bb_dir/$subtask_id/f"
@@ -258,6 +283,7 @@ draft_subtask() {
 		return 1
 	fi
 
+	# shellcheck disable=SC2153 # BB_DIR is defined in mnto at runtime
 	local bb_dir="$BB_DIR/$tid"
 	local ctx_file="$bb_dir/$subtask_id/ctx"
 	local draft_file="$bb_dir/$subtask_id/d"
@@ -287,94 +313,23 @@ draft_subtask() {
 
 	# Call apfel with SYS_DRAFT system prompt
 	if ! apfel -q -s "$SYS_DRAFT" "$ctx" >"$draft_file" 2>/dev/null; then
-		echo "ERROR: apfel failed for subtask $subtask_id" >&2
-		return 1
+		local exit_code=$?
+		if ((exit_code == 3)); then
+			echo "ERROR: apfel guardrail blocked drafting for subtask $subtask_id" >&2
+			return 1
+		elif ((exit_code == 4)); then
+			echo "ERROR: apfel context overflow during drafting for subtask $subtask_id" >&2
+			return 1
+		else
+			echo "ERROR: apfel failed for subtask $subtask_id (exit code $exit_code)" >&2
+			return 1
+		fi
 	fi
 
 	# Update status to draft state (preserve retry count for retry loop)
 	local retries
 	retries="$(get_retries "$tid" "$subtask_id")"
 	set_status "$tid" "$subtask_id" "d" "$retries"
-}
-
-# Stitch all final drafts into final output
-# Usage: stitch_task <tid>
-# Reads: .mnto/bb/{tid}/p (plan), .mnto/bb/{tid}/{subtask_id}/f (final drafts)
-# Writes: .mnto/bb/{tid}/out (final output)
-# Returns: 0 on success
-# Options: DRY_RUN=true shows context without calling apfel
-stitch_task() {
-	local tid="$1"
-
-	if ! validate_id "$tid"; then
-		return 1
-	fi
-
-	local bb_dir="$BB_DIR/$tid"
-	local plan_file="$bb_dir/p"
-	local out_file="$bb_dir/out"
-
-	if [[ ! -f "$plan_file" ]]; then
-		echo "ERROR: Plan file not found: $plan_file" >&2
-		return 1
-	fi
-
-	# Collect all final drafts in order
-	local -a sections=()
-	while IFS=' ' read -r subtask_id rest; do
-		if [[ -z "$subtask_id" ]]; then
-			continue
-		fi
-		local final_file="$bb_dir/$subtask_id/f"
-		if [[ -f "$final_file" ]]; then
-			sections+=("$(<"$final_file")")
-		fi
-	done <"$plan_file"
-
-	# Write sections directly to temp file (avoid O(n²) buffer concatenation)
-	local tmp_out
-	tmp_out="$(mktemp "${out_file}.XXXXXX")" || return 1
-
-	for ((i = 0; i < ${#sections[@]}; i++)); do
-		if ((i > 0)); then
-			printf '\n---\n\n' >>"$tmp_out"
-		fi
-		printf '%s\n' "${sections[i]}" >>"$tmp_out"
-	done
-
-	# Read back for apfel processing if needed
-	local total_len
-	total_len="$(wc -c <"$tmp_out")"
-
-	# Decide: apfel combine vs direct use
-	local result=""
-
-	# Dry-run mode: skip apfel call
-	if [[ "$DRY_RUN" == "true" ]]; then
-		print_status "INFO" "DRY RUN: Skipping stitch, would combine ${#sections[@]} sections"
-		mv "$tmp_out" "$out_file"
-		return 0
-	fi
-
-	if ((total_len < 3000)); then
-		# Use apfel to combine
-		local buffer
-		buffer="$(cat "$tmp_out")"
-		# Safety: ensure buffer doesn't start with - (would be interpreted as apfel flag)
-		if [[ "$buffer" == -* ]]; then
-			buffer=$'\n'"$buffer"
-		fi
-		if ! result="$(apfel -q -s "$SYS_STITCH" "$buffer" 2>/dev/null)"; then
-			# Fallback to direct concatenation
-			result="$buffer"
-		fi
-		echo "$result" >"$tmp_out"
-	else
-		# Direct concatenation - already in tmp_out
-		:
-	fi
-
-	mv "$tmp_out" "$out_file"
 }
 
 # Process a single subtask through draft-verify loop
@@ -433,6 +388,7 @@ run_harness() {
 		return 1
 	fi
 
+	# shellcheck disable=SC2153 # BB_DIR is defined in mnto at runtime
 	local bb_dir="$BB_DIR/$tid"
 	local plan_file="$bb_dir/p"
 

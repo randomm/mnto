@@ -42,7 +42,29 @@ generate_plan() {
 		if [[ "$goal" == -* ]]; then
 			goal=$'\n'"$goal"
 		fi
-		apfel -s "$SYS_PLAN" "$goal" 2>/dev/null || echo ""
+		local raw_output
+		raw_output="$(apfel -q -s "$SYS_PLAN" "$goal")"
+		local exit_code=$?
+
+		# Handle apfel exit codes
+		if ((exit_code == 3)); then
+			echo "ERROR: apfel guardrail blocked the request" >&2
+			echo ""
+			return 3
+		elif ((exit_code == 4)); then
+			echo "ERROR: apfel context overflow" >&2
+			echo ""
+			return 4
+		elif ((exit_code != 0)); then
+			echo "ERROR: apfel failed with exit code $exit_code" >&2
+			echo ""
+			return 1
+		fi
+
+		# Normalize output and return
+		local normalized
+		normalized="$(echo "$raw_output" | normalize_plan_output)"
+		echo "$normalized"
 	else
 		# Future extension point: external model support via PLAN_MODEL
 		echo "ERROR: PLAN_MODEL must be 'apfel' for now" >&2
