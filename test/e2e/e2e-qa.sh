@@ -92,11 +92,11 @@ collect_scenario_metrics() {
 		return 1
 	}
 
-	# Extract task ID - look for "task:" prefix in mnto output
-	task_id=$(echo "${mnto_output}" | grep -oE 'task: [a-zA-Z0-9]+' | grep -oE '[a-zA-Z0-9]+' || echo "")
+	# Extract task ID - mnto outputs "Created task: XXX"
+	task_id=$(echo "${mnto_output}" | grep -oE 'Created task: [a-z0-9]{3}\b' | grep -oE '[a-z0-9]{3}' || echo "")
 
-	# Validate task ID format before filesystem use
-	if [[ ! "$task_id" =~ ^[a-zA-Z0-9]+$ ]]; then
+	# Validate task ID format before filesystem use (must match validate_id() format)
+	if [[ ! "$task_id" =~ ^[a-z0-9]{3}$ ]]; then
 		log "ERROR: Invalid task ID format: $task_id"
 		return 1
 	fi
