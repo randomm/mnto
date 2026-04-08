@@ -47,6 +47,7 @@ source "$SCRIPT_DIR/lib/harness.bash"
 source "$SCRIPT_DIR/lib/stitcher.bash"
 
 # Global options
+declare -a REMAINING_ARGS
 DRY_RUN="${DRY_RUN:-false}"
 VIPUNE_ENABLED="${VIPUNE_ENABLED:-false}"
 PLAN_MODEL="${PLAN_MODEL:-apfel}"
@@ -229,6 +230,7 @@ resume_task() {
 }
 
 parse_options() {
+	local _remaining_args=()
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
 		-h | --help)
@@ -277,13 +279,12 @@ parse_options() {
 			exit 1
 			;;
 		*)
-			break
+			_remaining_args+=("$1")
+			shift
 			;;
 		esac
 	done
-
-	# Return remaining args
-	echo "$@"
+	REMAINING_ARGS=("${_remaining_args[@]}")
 }
 
 main() {
@@ -293,7 +294,8 @@ main() {
 	fi
 
 	# Parse global options first
-	eval set -- "$(parse_options "$@")"
+	parse_options "$@"
+	set -- "${REMAINING_ARGS[@]}"
 
 	case "$1" in
 	-h | --help)
