@@ -189,14 +189,27 @@ mock_apfel() {
 	source "$MNTO/lib/planner.bash"
 
 	apfel() {
-		echo "abc Plan: Test plan"
+		local sys_prompt="$3"
+		# If this is a restructuring call (second pass), return structured format
+		if [[ "$sys_prompt" == *"Restructure"* ]] || [[ "$sys_prompt" == *"restructure"* ]]; then
+			echo "abc Plan: Test plan, 100 words"
+			echo "def Detail: More details, 150 words"
+			echo "ghi End: Final section, 50 words"
+		else
+			# First call - return plain text without markdown symbols to avoid normalization
+			echo "This is a test plan"
+			echo "More details here"
+			echo "Final section"
+		fi
 	}
 
 	PLAN_MODEL="apfel"
 
 	local result
 	result="$(generate_plan "Test goal")"
-	[[ "$result" == "abc Plan: Test plan" ]]
+	[[ "$result" == *"abc Plan: Test plan"* ]]
+	[[ "$result" == *"def Detail"* ]]
+	[[ "$result" == *"ghi End"* ]]
 }
 
 @test "generate_plan rejects non-apfel PLAN_MODEL" {

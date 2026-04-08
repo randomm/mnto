@@ -21,22 +21,22 @@ readonly C_BLUE='\033[0;34m'
 # Validate task ID format (security)
 validate_id() {
 	local id="$1"
-	if [[ ! "$id" =~ ^[a-zA-Z0-9]{3}$ ]]; then
+	if [[ ! "$id" =~ ^[a-z0-9]{3}$ ]]; then
 		echo "ERROR: Invalid task ID format '$id'" >&2
 		return 1
 	fi
 	return 0
 }
 
-# Generate 3-char base62 ID with collision detection
+# Generate 3-char lowercase alphanumeric ID with collision detection
 gen_id() {
-	local chars="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+	local chars="0123456789abcdefghijklmnopqrstuvwxyz"
 	local id=""
 	local i
 	while true; do
 		id=""
 		for ((i = 0; i < 3; i++)); do
-			id+="${chars:$((RANDOM % 62)):1}"
+			id+="${chars:$((RANDOM % 36)):1}"
 		done
 		# Collision check - regenerate if directory already exists
 		# shellcheck disable=SC2153 # BB_DIR is defined in mnto at runtime
@@ -175,13 +175,77 @@ read_plan_line() {
 }
 
 # Normalize apfel output to extract plan lines
-# Strips markdown fences, ANSI codes, numbered prefixes, and leading whitespace
+# Handles: strict 3-char IDs, id1-style IDs, markdown headers
 # Usage: normalized_output="$(echo "$raw_output" | normalize_plan_output)"
 normalize_plan_output() {
 	local input
-	input="$(cat)"
+	input="$(head -c 65536)"
 
-	echo "$input" | sed '/^```/d' | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' | sed 's/^[[:space:]]*//' | sed '/^$/d' | sed 's/^[0-9]\{1,2\}[.)][[:space:]]*//' | sed 's/^[*-][[:space:]]*//' | grep -E '^[a-zA-Z0-9]{3}[^a-zA-Z0-9]' || true
+	# Strip common markdown artifacts
+	local clean
+	clean="$(echo "$input" |
+		sed '/^```/d' |
+		sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' |
+		sed 's/^[[:space:]]*//' |
+		sed '/^[[:space:]]*$/d' |
+		sed 's/^[0-9]\{1,2\}[.)][[:space:]]*//' |
+		sed 's/^[*-][[:space:]]*//' ||
+		true)"
+
+	# Pass 1: Extract lines with strict 3-char alphabetic ID format
+	local strict
+	strict="$(echo "$clean" | grep -E '^[a-z]{3}[[:space:]]+' || true)"
+	if [[ -n "$strict" ]]; then
+		echo "$strict"
+		return 0
+	fi
+
+	# Pass 2: Extract lines with label: description pattern (relaxed)
+	# Handles: "id1 introduction: Welcome..." or "Introduction: Brief overview"
+	local relaxed
+	relaxed="$(echo "$clean" | grep -E '^[a-zA-Z0-9]+[[:space:]]+.*:' || true)"
+	if [[ -n "$relaxed" ]]; then
+		# Assign sequential 3-char IDs to each line
+		local result=""
+		local ids=("abc" "def" "ghi" "jkl" "mno" "pqr" "stu" "vwx")
+		local counter=0
+		while IFS= read -r line; do
+			# Strip leading id1/id2/etc prefixes using bash substitution
+			if [[ "$line" =~ ^[a-zA-Z]*[0-9]+[[:space:]]+ ]]; then
+				local match="${BASH_REMATCH[0]}"
+				line="${line#"$match"}"
+			fi
+			# Use next ID from rotation
+			local id="${ids[$((counter % ${#ids[@]}))]}"
+			result+="${id} ${line}"$'\n'
+			((counter++))
+		done <<<"$relaxed"
+		# Remove trailing newline
+		result="$(echo "$result" | sed '/^$/d')"
+		echo "$result"
+		return 0
+	fi
+
+	# Pass 3: Extract markdown headers as section titles
+	local headers
+	headers="$(echo "$input" | grep -E '^##[[:space:]]+[^#]' | sed 's/^##[[:space:]]*//' || true)"
+	if [[ -n "$headers" ]]; then
+		local result=""
+		local ids=("abc" "def" "ghi" "jkl" "mno" "pqr" "stu" "vwx")
+		local counter=0
+		while IFS= read -r title; do
+			local id="${ids[$((counter % ${#ids[@]}))]}"
+			result+="${id} ${title}: ${title}, 100 words"$'\n'
+			((counter++))
+		done <<<"$headers"
+		result="$(echo "$result" | sed '/^$/d')"
+		echo "$result"
+		return 0
+	fi
+
+	# All passes failed
+	echo "WARNING: Could not normalize plan output" >&2
+	return 1
 }
 
 # Validate plan format before parsing (security)
@@ -211,10 +275,10 @@ validate_plan_format() {
 	while IFS= read -r line; do
 		[[ -z "$line" ]] && continue
 		((count++))
-		# Validate full format: "abc label: description, 100 words"
-		if [[ ! "$line" =~ ^[a-zA-Z0-9]{3}[[:space:]]+[^:]+:[^,]+,[[:space:]]*[0-9]+[[:space:]]*words?$ ]]; then
+		# Validate full format: "abc label: description, 100 words" (word count optional)
+		if [[ ! "$line" =~ ^[a-z]{3}[[:space:]]+[^:]+:[^,]+(,[[:space:]]*[0-9]+[[:space:]]*words?)?$ ]]; then
 			echo "ERROR: Invalid plan format on line $count: $line" >&2
-			echo "  Expected: idN label: description, NNN words" >&2
+			echo "  Expected: abc label: description[, NNN words] (3 lowercase chars for ID)" >&2
 			return 1
 		fi
 	done <<<"$plan"
@@ -225,6 +289,27 @@ validate_plan_format() {
 	fi
 
 	return 0
+}
+
+# Fill in missing word counts with default value
+# Usage: fill_missing_word_counts <plan>
+fill_missing_word_counts() {
+	local plan="$1"
+	local line
+	local result=""
+
+	while IFS= read -r line; do
+		[[ -z "$line" ]] && continue
+		# If line matches format but lacks word count, add default
+		# Accepts both lowercase plan IDs (abc) and alphanumeric task IDs (Xy9)
+		# Label must start with a letter and only contain letters/spaces
+		if [[ "$line" =~ ^[a-z0-9]{3}[[:space:]]+[[:alpha:]][[:alpha:][:space:]]*:[^,]+$ ]]; then
+			line="${line}, 100 words"
+		fi
+		result+="${line}"$'\n'
+	done <<<"$plan"
+
+	echo "$result"
 }
 
 # Parse plan and create subtask structure
@@ -254,9 +339,9 @@ parse_plan() {
 		if [[ -z "$id" ]]; then
 			continue
 		fi
-		# Validate ID is exactly 3 alphanumeric chars before creating directory
-		if [[ ! "$id" =~ ^[a-zA-Z0-9]{3}$ ]]; then
-			echo "ERROR: Invalid task ID: $id (must be exactly 3 alphanumeric chars)" >&2
+		# Validate ID is exactly 3 lowercase alphabetic chars before creating directory
+		if [[ ! "$id" =~ ^[a-z]{3}$ ]]; then
+			echo "ERROR: Invalid subtask ID: $id (must be exactly 3 lowercase chars)" >&2
 			return 1
 		fi
 		echo "$id - 0"
@@ -352,95 +437,4 @@ get_goal_snippet() {
 	else
 		echo "$goal"
 	fi
-}
-
-# Check if task is safe to clean (not active/failed)
-# Usage: is_task_safe_to_clean <task_dir>
-# Returns: 0 if safe to clean, 1 if should skip
-is_task_safe_to_clean() {
-	local task_dir="$1"
-	local tid
-	tid="$(basename "$task_dir")"
-
-	# Check if task has output file (completed)
-	if [[ -f "$task_dir/out" ]]; then
-		return 1
-	fi
-
-	# Check if any subtask is still in draft or waiting state (active)
-	if [[ -f "$task_dir/s" ]]; then
-		while IFS=' ' read -r _id state _retries; do
-			case "$state" in
-			d | - | f) return 1 ;; # draft, waiting, or failed = do not clean
-			esac
-		done <"$task_dir/s"
-	fi
-
-	return 0
-}
-
-# Clean tasks older than N days (skip active/failed tasks)
-# Usage: clean_tasks <days> [dry_run]
-clean_tasks() {
-	local days="${1:-30}"
-	local dry_run="${2:-false}"
-
-	if [[ ! -d "$BB_DIR" ]]; then
-		echo "No tasks found"
-		return 0
-	fi
-
-	local cleaned=0
-	while IFS= read -r task_dir; do
-		[[ -z "$task_dir" ]] && continue
-
-		if ! is_task_safe_to_clean "$task_dir"; then
-			continue
-		fi
-
-		local tid
-		tid="$(basename "$task_dir")"
-
-		if [[ "$dry_run" == "true" ]]; then
-			echo "Would clean: $tid"
-		else
-			rm -rf "$task_dir"
-			echo "Cleaned: $tid"
-		fi
-		((cleaned++)) || true
-	done < <(find "$BB_DIR" -maxdepth 1 -type d -mtime "+$days" 2>/dev/null)
-
-	echo "Cleaned $cleaned tasks older than $days days"
-}
-
-# Prune completed tasks (have out file)
-# Usage: prune_completed [dry_run]
-prune_completed() {
-	local dry_run="${1:-false}"
-
-	if [[ ! -d "$BB_DIR" ]]; then
-		echo "No tasks found"
-		return 0
-	fi
-
-	local pruned=0
-	for task_dir in "$BB_DIR"/*/; do
-		[[ -d "$task_dir" ]] || continue
-
-		# Only prune if out file exists (completed)
-		if [[ -f "$task_dir/out" ]]; then
-			local tid
-			tid="$(basename "$task_dir")"
-
-			if [[ "$dry_run" == "true" ]]; then
-				echo "Would prune: $tid"
-			else
-				rm -rf "$task_dir"
-				echo "Pruned: $tid"
-			fi
-			((pruned++)) || true
-		fi
-	done
-
-	echo "Pruned $pruned completed tasks"
 }
