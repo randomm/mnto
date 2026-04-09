@@ -336,6 +336,41 @@ ghi Conclusion: Summary, 50 words"
 	[[ "$result" != *"100 words"* ]]
 }
 
+@test "validate_plan_format accepts descriptions with commas" {
+	source "$MNTO/lib/blackboard.bash"
+	local plan
+	plan="abc greeting: Hello, my name is AI, and I am here to assist you, 100 words
+def intro: Brief, one-line description, 150 words
+ghi details: Write about X, Y, and Z, then conclude, 200 words"
+	validate_plan_format "$plan"
+	[ $? -eq 0 ]
+}
+
+@test "validate_plan_format accepts descriptions with commas without word count" {
+	source "$MNTO/lib/blackboard.bash"
+	local plan
+	plan="abc greeting: Hello, my name is AI, and I am here to assist you
+def intro: Brief, one-line description
+ghi details: Write about X, Y, and Z, then conclude"
+	validate_plan_format "$plan"
+	[ $? -eq 0 ]
+}
+
+@test "fill_missing_word_counts adds word count to descriptions with commas" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result=$(fill_missing_word_counts "abc greeting: Hello, my name is AI, and I am here to assist you")
+	[[ "$result" == *"abc greeting: Hello, my name is AI, and I am here to assist you, 100 words"* ]]
+}
+
+@test "fill_missing_word_counts preserves word count for descriptions with commas" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result=$(fill_missing_word_counts "abc greeting: Hello, my name is AI, and I am here to assist you, 200 words")
+	[[ "$result" == *"abc greeting: Hello, my name is AI, and I am here to assist you, 200 words"* ]]
+	[[ "$result" != *"100 words"* ]]
+}
+
 @test "generate_plan handles two-pass fallback" {
 	source "$MNTO/lib/blackboard.bash"
 	source "$MNTO/lib/planner.bash"
@@ -346,7 +381,7 @@ ghi Conclusion: Summary, 50 words"
 		((apfel_call_count++)) || true
 		export APEFEL_CALL_COUNT="$apfel_call_count"
 
-		if (( apfel_call_count == 1 )); then
+		if ((apfel_call_count == 1)); then
 			# First call (plan): return markdown headers
 			echo "## Introduction"
 			echo "## Installation"

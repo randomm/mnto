@@ -260,7 +260,7 @@ handle_retry() {
 		return 1
 	else
 		# Increment retry count
-		((retries++)) || true
+		retries=$((retries + 1))
 		set_status "$tid" "$subtask_id" "c" "$retries"
 		return 0
 	fi
