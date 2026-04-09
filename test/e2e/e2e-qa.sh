@@ -93,14 +93,14 @@ collect_scenario_metrics() {
 	}
 
 	# Extract task ID using BASH_REMATCH to avoid matching unrelated 3-char strings
-	if [[ "${mnto_output}" =~ Created\ task:\ ([a-z0-9]{3}) ]]; then
+	if [[ "${mnto_output}" =~ Created\ task:\ ([a-z]{3}) ]]; then
 		task_id="${BASH_REMATCH[1]}"
 	else
 		task_id=""
 	fi
 
 	# Validate task ID format before filesystem use (must match validate_id() format)
-	if [[ ! "$task_id" =~ ^[a-z0-9]{3}$ ]]; then
+	if [[ ! "$task_id" =~ ^[a-z]{3}$ ]]; then
 		log "ERROR: Invalid task ID format: $task_id"
 		return 1
 	fi

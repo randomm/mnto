@@ -127,7 +127,7 @@ teardown() {
 	# Verify task directory exists via list
 	run "$TEST_MNTO" --list
 	[[ $status -eq 0 ]]
-	[[ "$output" == *[a-z0-9][a-z0-9][a-z0-9]* ]]
+	[[ "$output" == *[a-z][a-z][a-z]* ]]
 }
 
 @test "mnto --list shows tasks" {
@@ -139,7 +139,7 @@ teardown() {
 	run "$TEST_MNTO" --list
 	[[ $status -eq 0 ]]
 	[[ "${#lines[@]}" -ge 2 ]]
-	[[ "${lines[0]}" =~ ^[a-z0-9]{3}$ ]] || [[ "${lines[1]}" =~ ^[a-z0-9]{3}$ ]]
+	[[ "${lines[0]}" =~ ^[a-z]{3}$ ]] || [[ "${lines[1]}" =~ ^[a-z]{3}$ ]]
 }
 
 @test "mnto --resume fails for non-existent task" {
@@ -151,10 +151,10 @@ teardown() {
 @test "mnto --resume existing task" {
 	run "$TEST_MNTO" "Test task"
 	[[ $status -eq 0 ]]
-	# Extract task ID from "Created task: XYZ" where XYZ is exactly 3 lowercase alphanumeric
+	# Extract task ID from "Created task: XYZ" where XYZ is exactly 3 lowercase letters
 	local tid="${lines[0]}"
 	tid="${tid##*Created task: }"
-	[[ "$tid" =~ ^[a-z0-9]{3}$ ]] || return 1
+	[[ "$tid" =~ ^[a-z]{3}$ ]] || return 1
 
 	run "$TEST_MNTO" --resume "$tid"
 	[[ $status -eq 0 ]]
@@ -166,7 +166,7 @@ teardown() {
 	local id
 	id="$(gen_id)"
 	[ ${#id} -eq 3 ]
-	[[ "$id" =~ ^[a-z0-9]{3}$ ]]
+	[[ "$id" =~ ^[a-z]{3}$ ]]
 }
 
 @test "next_task returns first waiting subtask" {
@@ -336,6 +336,41 @@ ghi Conclusion: Summary, 50 words"
 	[[ "$result" != *"100 words"* ]]
 }
 
+@test "validate_plan_format accepts descriptions with commas" {
+	source "$MNTO/lib/blackboard.bash"
+	local plan
+	plan="abc greeting: Hello, my name is AI, and I am here to assist you, 100 words
+def intro: Brief, one-line description, 150 words
+ghi details: Write about X, Y, and Z, then conclude, 200 words"
+	validate_plan_format "$plan"
+	[ $? -eq 0 ]
+}
+
+@test "validate_plan_format accepts descriptions with commas without word count" {
+	source "$MNTO/lib/blackboard.bash"
+	local plan
+	plan="abc greeting: Hello, my name is AI, and I am here to assist you
+def intro: Brief, one-line description
+ghi details: Write about X, Y, and Z, then conclude"
+	validate_plan_format "$plan"
+	[ $? -eq 0 ]
+}
+
+@test "fill_missing_word_counts adds word count to descriptions with commas" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result=$(fill_missing_word_counts "abc greeting: Hello, my name is AI, and I am here to assist you")
+	[[ "$result" == *"abc greeting: Hello, my name is AI, and I am here to assist you, 100 words"* ]]
+}
+
+@test "fill_missing_word_counts preserves word count for descriptions with commas" {
+	source "$MNTO/lib/blackboard.bash"
+	local result
+	result=$(fill_missing_word_counts "abc greeting: Hello, my name is AI, and I am here to assist you, 200 words")
+	[[ "$result" == *"abc greeting: Hello, my name is AI, and I am here to assist you, 200 words"* ]]
+	[[ "$result" != *"100 words"* ]]
+}
+
 @test "generate_plan handles two-pass fallback" {
 	source "$MNTO/lib/blackboard.bash"
 	source "$MNTO/lib/planner.bash"
@@ -346,7 +381,7 @@ ghi Conclusion: Summary, 50 words"
 		((apfel_call_count++)) || true
 		export APEFEL_CALL_COUNT="$apfel_call_count"
 
-		if (( apfel_call_count == 1 )); then
+		if ((apfel_call_count == 1)); then
 			# First call (plan): return markdown headers
 			echo "## Introduction"
 			echo "## Installation"

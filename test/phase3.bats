@@ -66,13 +66,13 @@ source_harness() {
 @test "get_task_status returns done when output exists" {
 	source "$MNTO/lib/blackboard.bash"
 
-	mkdir -p "$BB_DIR/al2/abc"
-	echo "abc Intro: Overview" >"$BB_DIR/al2/p"
-	echo "abc f 0" >"$BB_DIR/al2/s"
-	echo "Final content" >"$BB_DIR/al2/out"
+	mkdir -p "$BB_DIR/alx/abc"
+	echo "abc Intro: Overview" >"$BB_DIR/alx/p"
+	echo "abc f 0" >"$BB_DIR/alx/s"
+	echo "Final content" >"$BB_DIR/alx/out"
 
 	local result
-	result="$(get_task_status "al2")"
+	result="$(get_task_status "alx")"
 	[ "$result" = "done" ]
 }
 

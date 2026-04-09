@@ -21,22 +21,22 @@ readonly C_BLUE='\033[0;34m'
 # Validate task ID format (security)
 validate_id() {
 	local id="$1"
-	if [[ ! "$id" =~ ^[a-z0-9]{3}$ ]]; then
+	if [[ ! "$id" =~ ^[a-z]{3}$ ]]; then
 		echo "ERROR: Invalid task ID format '$id'" >&2
 		return 1
 	fi
 	return 0
 }
 
-# Generate 3-char lowercase alphanumeric ID with collision detection
+# Generate 3-char lowercase alphabetic ID with collision detection
 gen_id() {
-	local chars="0123456789abcdefghijklmnopqrstuvwxyz"
+	local chars="abcdefghijklmnopqrstuvwxyz"
 	local id=""
 	local i
 	while true; do
 		id=""
 		for ((i = 0; i < 3; i++)); do
-			id+="${chars:$((RANDOM % 36)):1}"
+			id+="${chars:$((RANDOM % 26)):1}"
 		done
 		# Collision check - regenerate if directory already exists
 		# shellcheck disable=SC2153 # BB_DIR is defined in mnto at runtime
@@ -218,7 +218,7 @@ normalize_plan_output() {
 			# Use next ID from rotation
 			local id="${ids[$((counter % ${#ids[@]}))]}"
 			result+="${id} ${line}"$'\n'
-			((counter++))
+			counter=$((counter + 1))
 		done <<<"$relaxed"
 		# Remove trailing newline
 		result="$(echo "$result" | sed '/^$/d')"
@@ -236,7 +236,7 @@ normalize_plan_output() {
 		while IFS= read -r title; do
 			local id="${ids[$((counter % ${#ids[@]}))]}"
 			result+="${id} ${title}: ${title}, 100 words"$'\n'
-			((counter++))
+			counter=$((counter + 1))
 		done <<<"$headers"
 		result="$(echo "$result" | sed '/^$/d')"
 		echo "$result"
@@ -256,27 +256,15 @@ validate_plan_format() {
 		return 1
 	fi
 
-	# Count raw non-empty lines before normalization (for warning)
-	local raw_count
-	raw_count="$(echo "$plan" | grep -c '.' || true)"
-
-	# Normalize the plan first to handle apfel's formatting
-	plan="$(echo "$plan" | normalize_plan_output)"
-
-	# Warn if normalization filtered lines
-	local norm_count
-	norm_count="$(echo "$plan" | grep -c '.' || true)"
-
-	if ((raw_count > norm_count)); then
-		echo "WARNING: $((raw_count - norm_count)) lines filtered during normalization" >&2
-	fi
+	# Note: Plan should already be normalized before calling validate_plan_format.
+	# generate_plan() handles normalization before this function is called.
 
 	local count=0
 	while IFS= read -r line; do
 		[[ -z "$line" ]] && continue
-		((count++))
+		count=$((count + 1))
 		# Validate full format: "abc label: description, 100 words" (word count optional)
-		if [[ ! "$line" =~ ^[a-z]{3}[[:space:]]+[^:]+:[^,]+(,[[:space:]]*[0-9]+[[:space:]]*words?)?$ ]]; then
+		if [[ ! "$line" =~ ^[a-z]{3}[[:space:]]+[^:]+:.+$ ]]; then
 			echo "ERROR: Invalid plan format on line $count: $line" >&2
 			echo "  Expected: abc label: description[, NNN words] (3 lowercase chars for ID)" >&2
 			return 1
@@ -301,9 +289,8 @@ fill_missing_word_counts() {
 	while IFS= read -r line; do
 		[[ -z "$line" ]] && continue
 		# If line matches format but lacks word count, add default
-		# Accepts both lowercase plan IDs (abc) and alphanumeric task IDs (Xy9)
 		# Label must start with a letter and only contain letters/spaces
-		if [[ "$line" =~ ^[a-z0-9]{3}[[:space:]]+[[:alpha:]][[:alpha:][:space:]]*:[^,]+$ ]]; then
+		if [[ "$line" =~ ^[a-z]{3}[[:space:]]+[[:alpha:]][[:alpha:][:space:]]*:.+ ]] && [[ ! "$line" =~ ,[[:space:]]*[0-9]+[[:space:]]*words[[:space:]]*$ ]]; then
 			line="${line}, 100 words"
 		fi
 		result+="${line}"$'\n'
@@ -367,10 +354,10 @@ count_subtasks() {
 	local w=0 d=0 c=0 fail=0
 	while IFS=' ' read -r _id state _retries; do
 		case "$state" in
-		-) ((w++)) ;;
-		d) ((d++)) ;;
-		c) ((c++)) ;;
-		f) ((fail++)) ;;
+		-) w=$((w + 1)) ;;
+		d) d=$((d + 1)) ;;
+		c) c=$((c + 1)) ;;
+		f) fail=$((fail + 1)) ;;
 		*) echo "WARNING: Unknown state '$state' in status file" >&2 ;;
 		esac
 	done <"$status_file"

@@ -67,7 +67,7 @@ clean_tasks() {
 			rm -rf "$task_dir"
 			echo "Cleaned: $tid"
 		fi
-		((cleaned++)) || true
+		cleaned=$((cleaned + 1))
 	done < <(find "$BB_DIR" -maxdepth 1 -type d -mtime "+$days" 2>/dev/null)
 
 	echo "Cleaned $cleaned tasks older than $days days"
@@ -98,7 +98,7 @@ prune_completed() {
 				rm -rf "$task_dir"
 				echo "Pruned: $tid"
 			fi
-			((pruned++)) || true
+			pruned=$((pruned + 1))
 		fi
 	done
 
