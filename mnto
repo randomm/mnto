@@ -41,6 +41,7 @@ fi
 
 # Source library functions
 source "$SCRIPT_DIR/lib/blackboard.bash"
+source "$SCRIPT_DIR/lib/backend.bash"
 source "$SCRIPT_DIR/lib/maintenance.bash"
 source "$SCRIPT_DIR/lib/planner.bash"
 source "$SCRIPT_DIR/lib/harness.bash"
@@ -51,6 +52,8 @@ declare -a REMAINING_ARGS
 DRY_RUN="${DRY_RUN:-false}"
 VIPUNE_ENABLED="${VIPUNE_ENABLED:-false}"
 PLAN_MODEL="${PLAN_MODEL:-apfel}"
+PROPOSER_MODEL="${PROPOSER_MODEL:-}"
+VERIFIER_MODEL="${VERIFIER_MODEL:-}"
 CLEAN_MODE="${CLEAN_MODE:-false}"
 PRUNE_MODE="${PRUNE_MODE:-false}"
 CLEAN_DAYS="${CLEAN_DAYS:-30}"
@@ -71,7 +74,9 @@ Commands:
 Options:
   -h, --help            Show this help
   --dry-run             Show actions without executing (also --clean, --prune)
-  --plan-model {url}    Use external model (curl to URL or command)
+  --plan-model {url}    Use external model (legacy alias for --proposer)
+  --proposer {spec}     Model spec for proposer/planner/stitcher (apfel or openai:URL:MODEL)
+  --verifier {spec}     Model spec for verifier (apfel or openai:URL:MODEL)
   --vipune              Enable vipune semantic search integration
 EOF
 }
@@ -249,6 +254,22 @@ parse_options() {
 			PLAN_MODEL="$2"
 			shift 2
 			;;
+		--proposer)
+			if [[ $# -lt 2 ]]; then
+				echo "ERROR: --proposer requires a model spec (apfel or openai:URL:MODEL)" >&2
+				exit 1
+			fi
+			PROPOSER_MODEL="$2"
+			shift 2
+			;;
+		--verifier)
+			if [[ $# -lt 2 ]]; then
+				echo "ERROR: --verifier requires a model spec (apfel or openai:URL:MODEL)" >&2
+				exit 1
+			fi
+			VERIFIER_MODEL="$2"
+			shift 2
+			;;
 		--vipune)
 			VIPUNE_ENABLED="true"
 			shift
@@ -296,6 +317,19 @@ main() {
 	# Parse global options first
 	parse_options "$@"
 	set -- "${REMAINING_ARGS[@]}"
+
+	# Backward compatibility: map --plan-model to PROPOSER when --proposer not set
+	if [[ -n "$PLAN_MODEL" ]] && [[ -z "$PROPOSER_MODEL" ]]; then
+		PROPOSER_MODEL="$PLAN_MODEL"
+	fi
+
+	# Precedence: CLI flags override pre-set env vars
+	if [[ -n "$PROPOSER_MODEL" ]]; then
+		export MNTO_PROPOSER="$PROPOSER_MODEL"
+	fi
+	if [[ -n "$VERIFIER_MODEL" ]]; then
+		export MNTO_VERIFIER="$VERIFIER_MODEL"
+	fi
 
 	case "$1" in
 	-h | --help)
