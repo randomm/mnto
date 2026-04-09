@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# e2e-qa.sh - End-to-end validation suite for mnto with real apfel calls
-# Usage: ./test/e2e/e2e-qa.sh [--scenario SCENARIO] [--dry-run]
+# e2e-qa.sh - End-to-end validation suite for mnto with real inference calls
+# Usage: ./test/e2e/e2e-qa.sh [--scenario SCENARIO] [--backend SPEC] [--dry-run]
 
 set -euo pipefail
 
@@ -12,9 +12,13 @@ readonly PROJECT_ROOT
 readonly SCENARIOS_DIR="$SCRIPT_DIR/scenarios"
 readonly RESULTS_DIR="$SCRIPT_DIR/results"
 
+# Backend configuration
+BACKEND=""
+readonly DEFAULT_BACKEND="apfel"
+
 # Global metrics
 total_duration=0
-total_apfel_calls=0
+total_inference_calls=0
 total_retries=0
 scenarios_run=0
 scenarios_passed=0
@@ -28,16 +32,27 @@ usage() {
 	cat <<EOF
 Usage: e2e-qa.sh [OPTIONS]
 
-End-to-end validation suite for mnto with real apfel calls.
+End-to-end validation suite for mnto with real inference calls.
 
 OPTIONS:
     --scenario SCENARIO    Run specific scenario (e.g., 01, 02, etc.)
+    --backend SPEC         Backend specification (apfel, openai)
     --dry-run              Show what would run without executing
     --help                 Show this help message
 
+BACKEND SELECTION:
+    --backend apfel        Use apfel CLI for inference
+    --backend openai       Use OpenAI API for inference (requires OPENAI_API_KEY or MNTO_API_KEY)
+
+    If --backend is not specified, backend is auto-detected from:
+    1. MNTO_VERIFIER environment variable
+    2. MNTO_MODEL environment variable
+    3. Default: apfel
+
 EXAMPLES:
-    e2e-qa.sh                    # Run all scenarios
+    e2e-qa.sh                    # Run all scenarios with auto-detected backend
     e2e-qa.sh --scenario 01      # Run only scenario 01
+    e2e-qa.sh --backend openai   # Run all scenarios with OpenAI backend
     e2e-qa.sh --dry-run           # Preview scenarios to run
 
 EOF
@@ -51,6 +66,101 @@ log_section() {
 	echo "" | tee -a "${SUMMARY_FILE}"
 	echo "=== $*" | tee -a "${SUMMARY_FILE}"
 	echo "" | tee -a "${SUMMARY_FILE}"
+}
+
+# Portable timing function - returns decimal seconds
+# Works on both Linux and macOS
+now_seconds() {
+	local time_str
+	time_str=$(date +%s.%N 2>/dev/null || true)
+	# If %N is not supported (macOS), it appears literally in output
+	if [[ "$time_str" == *"%N" ]]; then
+		echo "$(date +%s).000000000"
+	else
+		echo "$time_str"
+	fi
+}
+
+# Extract backend prefix from spec (format: backend:rest)
+extract_backend_prefix() {
+	local spec="$1"
+	echo "${spec%%:*}"
+}
+
+detect_backend() {
+	# If backend explicitly set, use it
+	if [[ -n "$BACKEND" ]]; then
+		return 0
+	fi
+
+	# Detect from MNTO_VERIFIER using prefix semantics
+	local verifier
+	verifier="${MNTO_VERIFIER:-}"
+	if [[ -n "$verifier" ]]; then
+		local detected_backend
+		detected_backend=$(extract_backend_prefix "$verifier")
+		case "$detected_backend" in
+			apfel|openai)
+				BACKEND="$detected_backend"
+				;;
+			*)
+				echo "ERROR: Unsupported backend in MNTO_VERIFIER: $detected_backend (supported: apfel, openai)" >&2
+				exit 1
+				;;
+		esac
+		return 0
+	fi
+
+	# Detect from MNTO_MODEL using prefix semantics
+	local model
+	model="${MNTO_MODEL:-}"
+	if [[ -n "$model" ]]; then
+		local detected_backend
+		detected_backend=$(extract_backend_prefix "$model")
+		case "$detected_backend" in
+			apfel|openai)
+				BACKEND="$detected_backend"
+				;;
+			*)
+				echo "ERROR: Unsupported backend in MNTO_MODEL: $detected_backend (supported: apfel, openai)" >&2
+				exit 1
+				;;
+		esac
+		return 0
+	fi
+
+	# Default to apfel
+	BACKEND="$DEFAULT_BACKEND"
+	return 0
+}
+
+check_backend_dependencies() {
+	case "$BACKEND" in
+	apfel)
+		if ! command -v apfel &>/dev/null; then
+			echo "ERROR: apfel not found in PATH (required for apfel backend)"
+			exit 1
+		fi
+		;;
+	openai)
+		if ! command -v curl &>/dev/null; then
+			echo "ERROR: curl not found in PATH (required for openai backend)"
+			exit 1
+		fi
+		if ! command -v jq &>/dev/null; then
+			echo "ERROR: jq not found in PATH (required for openai backend)"
+			exit 1
+		fi
+		if [[ -z "${OPENAI_API_KEY:-}" ]] && [[ -z "${MNTO_API_KEY:-}" ]]; then
+			echo "ERROR: Neither OPENAI_API_KEY nor MNTO_API_KEY is set (required for openai backend)"
+			exit 1
+		fi
+		;;
+	*)
+		echo "ERROR: Unknown backend: $BACKEND (supported: apfel, openai)"
+		exit 1
+		;;
+	esac
 }
 
 init_results_dir() {
@@ -73,14 +183,22 @@ collect_scenario_metrics() {
 	mkdir -p "${scenario_dir}"
 
 	local start_time end_time duration
-	start_time=$(date +%s.%N)
+	start_time=$(now_seconds)
 
-	# Count apfel calls and retries from blackboard state
-	local apfel_calls=0
+	# Count inference calls and retries from blackboard state
+	local inference_calls=0
 	local retry_count=0
 
 	log_section "Running scenario: ${scenario_name}"
 	log "Goal: $(head -1 "${scenario_path}")"
+
+	# Set environment based on backend if not already set
+	# This ensures --backend actually influences mnto run
+	if [[ "$BACKEND" == "openai" ]] && [[ -z "${MNTO_MODEL:-}" ]]; then
+		export MNTO_MODEL="openai:http://localhost:11434/v1:gpt-4o-mini"
+	elif [[ "$BACKEND" == "apfel" ]] && [[ -z "${MNTO_MODEL:-}" ]]; then
+		export MNTO_MODEL="apfel"
+	fi
 
 	# Run mnto with the scenario goal
 	# Capture the task ID for metrics collection
@@ -117,16 +235,28 @@ collect_scenario_metrics() {
 	# Collect metrics from blackboard if available
 	local bb_dir="${BB_DIR:-$PROJECT_ROOT/.mnto/bb}"
 	if [[ -d "$bb_dir/${task_id}" ]]; then
-		# Count apfel calls by counting lines in status file
+		# Count inference calls by counting lines in status file
 		if [[ -f "$bb_dir/${task_id}/s" ]]; then
-			apfel_calls=$(wc -l <"$bb_dir/${task_id}/s")
+			local wc_output
+			wc_output=$(wc -l <"$bb_dir/${task_id}/s")
+			# Normalize: strip whitespace (macOS wc may have leading spaces)
+			inference_calls=$(echo "$wc_output" | tr -d ' ')
 		else
-			apfel_calls=0
+			inference_calls=0
 		fi
-		retry_count=$(grep -r "retry" "$bb_dir/${task_id}" 2>/dev/null | wc -l || echo 0)
+
+# Count retry occurrences, with error handling for unreadable directories
+		if [[ -r "$bb_dir/${task_id}" ]]; then
+			retry_count=$(grep -r "retry" "$bb_dir/${task_id}" 2>/dev/null | wc -l || echo 0)
+			# Normalize: strip whitespace
+			retry_count=$(echo "$retry_count" | tr -d ' ')
+		else
+			log "WARNING: Blackboard directory not readable: $bb_dir/${task_id}"
+			retry_count=0
+		fi
 	fi
 
-	end_time=$(date +%s.%N)
+	end_time=$(now_seconds)
 	duration=$(echo "${end_time} - ${start_time}" | bc || echo "0")
 
 	# Get output size
@@ -135,17 +265,17 @@ collect_scenario_metrics() {
 
 	# Write metrics to JSONL
 	cat >>"${METRICS_FILE}" <<EOF
-{"scenario":"${scenario_name}","task_id":"${task_id}","duration":${duration},"apfel_calls":${apfel_calls},"retries":${retry_count},"output_size":${output_size},"status":"success"}
+{"scenario":"${scenario_name}","task_id":"${task_id}","duration":${duration},"backend":"${BACKEND}","inference_calls":${inference_calls},"retries":${retry_count},"output_size":${output_size},"status":"success"}
 EOF
 
 	# Update totals
 	total_duration=$(echo "${total_duration} + ${duration}" | bc)
-	total_apfel_calls=$((total_apfel_calls + apfel_calls))
+	total_inference_calls=$((total_inference_calls + inference_calls))
 	total_retries=$((total_retries + retry_count))
 	scenarios_run=$((scenarios_run + 1))
 	scenarios_passed=$((scenarios_passed + 1))
 
-	log "Completed in ${duration}s | apfel calls: ${apfel_calls} | retries: ${retry_count}"
+	log "Completed in ${duration}s | inference calls: ${inference_calls} | retries: ${retry_count}"
 
 	return 0
 }
@@ -182,10 +312,11 @@ print_summary() {
 		return
 	fi
 
+	log "Backend: ${BACKEND}"
 	log "Scenarios run: ${scenarios_run}"
 	log "Scenarios passed: ${scenarios_passed}"
 	log "Total duration: ${total_duration}s"
-	log "Total apfel calls: ${total_apfel_calls}"
+	log "Total inference calls: ${total_inference_calls}"
 	log "Total retries: ${total_retries}"
 
 	if [[ ${scenarios_run} -gt 0 ]]; then
@@ -230,6 +361,10 @@ main() {
 			scenario_filter="$2"
 			shift 2
 			;;
+		--backend)
+			BACKEND="$2"
+			shift 2
+			;;
 		--dry-run)
 			is_dry_run=true
 			shift
@@ -246,21 +381,25 @@ main() {
 		esac
 	done
 
+	# Detect backend if not explicitly set
+	detect_backend
+
 	# Check dependencies
 	if [[ ! -x "$PROJECT_ROOT/mnto" ]]; then
 		echo "ERROR: mnto not found at $PROJECT_ROOT/mnto"
 		exit 1
 	fi
 
-	if ! command -v apfel &>/dev/null; then
-		echo "ERROR: apfel not found in PATH"
-		exit 1
-	fi
+	# Check backend-specific dependencies
+	check_backend_dependencies
 
 	if ! command -v bc &>/dev/null; then
 		echo "ERROR: bc not found in PATH (required for metrics)"
 		exit 1
 	fi
+
+	# Log detected backend
+	echo "Using backend: ${BACKEND}"
 
 	# Initialize
 	init_results_dir

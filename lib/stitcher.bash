@@ -2,9 +2,9 @@
 # Stitch step: combine final subtask outputs into unified document
 set -euo pipefail
 
-# Dependency guard — must source blackboard.bash and planner.bash first
-if [[ "${_BLACKBOARD_SOURCED:-}" != "1" ]] || [[ "${_PLANNER_SOURCED:-}" != "1" ]]; then
-	echo "ERROR: stitcher.bash requires blackboard.bash and planner.bash to be sourced first" >&2
+# Dependency guard — must source blackboard.bash, backend.bash, and planner.bash first
+if [[ "${_BLACKBOARD_SOURCED:-}" != "1" ]] || [[ "${_BACKEND_SOURCED:-}" != "1" ]] || [[ "${_PLANNER_SOURCED:-}" != "1" ]]; then
+	echo "ERROR: stitcher.bash requires blackboard.bash, backend.bash, and planner.bash to be sourced first" >&2
 	# shellcheck disable=SC2317
 	return 1 2>/dev/null || exit 1
 fi
@@ -73,21 +73,18 @@ stitch_task() {
 	fi
 
 	if ((total_len < 3000)); then
-		# Use apfel to combine
+		# Use infer to combine
 		local buffer
 		buffer="$(cat "$tmp_out")"
-		# Safety: ensure buffer doesn't start with - (would be interpreted as apfel flag)
-		if [[ "$buffer" == -* ]]; then
-			buffer=$'\n'"$buffer"
-		fi
-		if ! result="$(apfel -q -s "$SYS_STITCH" "$buffer" 2>/dev/null)"; then
+
+		if ! result="$(infer stitcher "$SYS_STITCH" "$buffer" 2>/dev/null)"; then
 			local exit_code=$?
 			if ((exit_code == 3)); then
-				echo "WARNING: apfel guardrail blocked stitching, using direct concatenation" >&2
+				echo "WARNING: guardrail blocked stitching, using direct concatenation" >&2
 			elif ((exit_code == 4)); then
-				echo "WARNING: apfel context overflow during stitching, using direct concatenation" >&2
+				echo "WARNING: context overflow during stitching, using direct concatenation" >&2
 			else
-				echo "WARNING: apfel failed during stitching (exit code $exit_code), using direct concatenation" >&2
+				echo "WARNING: inference failed during stitching (exit code $exit_code), using direct concatenation" >&2
 			fi
 			# Fallback to direct concatenation
 			result="$buffer"

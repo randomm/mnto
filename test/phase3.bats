@@ -15,6 +15,7 @@ teardown() {
 # Source all harness dependencies in correct order
 source_harness() {
 	source "$MNTO/lib/blackboard.bash"
+	source "$MNTO/lib/backend.bash"
 	source "$MNTO/lib/planner.bash"
 	source "$MNTO/lib/harness.bash"
 	source "$MNTO/lib/stitcher.bash"
@@ -141,14 +142,14 @@ source_harness() {
 		echo "abc Section"
 	} >"$BB_DIR/dry/abc/ctx"
 
-	# Mock apfel that should NOT be called
-	apfel() {
-		echo "ERROR: apfel should not be called in dry-run" >&2
+	# Mock infer that should NOT be called
+	infer() {
+		echo "ERROR: infer should not be called in dry-run" >&2
 		return 1
 	}
 
 	run draft_subtask "dry" "abc"
-	# Should succeed without calling apfel
+	# Should succeed without calling infer
 	[ "$status" -eq 0 ]
 	# Draft file should NOT be created
 	[ ! -f "$BB_DIR/dry/abc/d" ]
@@ -167,7 +168,7 @@ source_harness() {
 		echo "Test goal"
 	} >"$BB_DIR/dry/abc/ctx"
 
-	apfel() { return 0; }
+	infer() { return 0; }
 
 	run draft_subtask "dry" "abc"
 	# Should output DRY RUN marker
@@ -177,19 +178,21 @@ source_harness() {
 
 # ============ Plan Model Feature Tests ============
 
-# Mock apfel for testing
+# Mock infer for testing plan-related inference
 mock_apfel() {
 	echo "abc Plan: Test plan"
 }
 
 # ============ Generate Plan Tests ============
 
-@test "generate_plan respects PLAN_MODEL=apfel" {
+@test "generate_plan calls infer planner" {
 	source "$MNTO/lib/blackboard.bash"
+	source "$MNTO/lib/backend.bash"
 	source "$MNTO/lib/planner.bash"
 
-	apfel() {
-		local sys_prompt="$3"
+	infer() {
+		local role="$1"
+		local sys_prompt="$2"
 		# If this is a restructuring call (second pass), return structured format
 		if [[ "$sys_prompt" == *"Restructure"* ]] || [[ "$sys_prompt" == *"restructure"* ]]; then
 			echo "abc Plan: Test plan, 100 words"
@@ -203,25 +206,11 @@ mock_apfel() {
 		fi
 	}
 
-	PLAN_MODEL="apfel"
-
 	local result
 	result="$(generate_plan "Test goal")"
 	[[ "$result" == *"abc Plan: Test plan"* ]]
 	[[ "$result" == *"def Detail"* ]]
 	[[ "$result" == *"ghi End"* ]]
-}
-
-@test "generate_plan rejects non-apfel PLAN_MODEL" {
-	source "$MNTO/lib/planner.bash"
-
-	PLAN_MODEL="curl"
-
-	run generate_plan "Test goal"
-	# Should return failure (non-apfel not supported)
-	# Output should contain error message (run captures stderr)
-	[ "$status" -ne 0 ]
-	[[ "$output" == *"ERROR: PLAN_MODEL must be 'apfel' for now"* ]]
 }
 
 # ============ Vipune Feature Tests ============
@@ -352,8 +341,8 @@ mock_apfel() {
 	# Create context for def (needs prev)
 	echo "Previous content" >"$BB_DIR/res/abc/f"
 
-	# Mock apfel for verify to PASS
-	apfel() {
+	# Mock infer for verify to PASS
+	infer() {
 		echo "PASS"
 	}
 
@@ -375,7 +364,7 @@ mock_apfel() {
 	echo "First section" >"$BB_DIR/dry/abc/f"
 	echo "Second section" >"$BB_DIR/dry/def/f"
 
-	apfel() {
+	infer() {
 		echo "ERROR: Should not be called in dry-run" >&2
 	}
 
