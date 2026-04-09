@@ -313,6 +313,15 @@ mock_apfel_overflow() {
 }
 
 # Test infer with OpenAI backend stub
+@test "infer rejects invalid role" {
+	mock_apfel_success
+	unset MNTO_VERIFIER MNTO_PROPOSER MNTO_MODEL
+
+	run infer "invalid_role" "system" "context"
+	assert_failure
+	assert_output --partial "ERROR: Invalid role 'invalid_role'"
+}
+
 @test "infer returns error for unknown backend" {
 	export MNTO_MODEL="unknown-backend"
 	unset MNTO_VERIFIER MNTO_PROPOSER

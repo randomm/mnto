@@ -10,43 +10,51 @@ declare -r _OPENAI_SOURCED=1
 # Prints: base_url\tmodel (tab-separated)
 # Spec format: openai:SCHEME://HOST:PORT/PATH:MODEL
 # Example: openai:http://localhost:11434/v1:qwen3:30b-a3b
+# Note: model is ALWAYS the last segment after the final colon (handles model names with colons)
 _parse_openai_spec() {
 	local spec="$1"
 
 	# Strip "openai:" prefix
 	local url_and_model="${spec#openai:}"
 
-	# Match: scheme://host/path:MODEL (supports optional port in host part)
-	# This handles: http://localhost:11434/v1:qwen3 and localhost:11434/v1:qwen3:30b
-	if [[ "$url_and_model" =~ ^(https?://[^:/]+(?::[0-9]+)?[^:]*):(.+)$ ]]; then
-		local base_url="${BASH_REMATCH[1]}"
-		local model="${BASH_REMATCH[2]}"
+	# Extract base URL and model by splitting on last colon
+	# Base URL is everything before the last colon, model is everything after
+	# This handles: http://localhost:11434/v1:gpt-4 and model names with colons
+	local base_url="${url_and_model%:*}"
+	local model="${url_and_model##*:}"
 
-		if [[ -z "$base_url" || -z "$model" ]]; then
-			echo "ERROR: Could not parse backend spec: $1" >&2
-			return 1
-		fi
-
-		# Validate URL scheme to prevent SSRF
-		if [[ ! "$base_url" =~ ^https?:// ]]; then
-			echo "ERROR: Invalid URL scheme in backend spec" >&2
-			return 1
-		fi
-
-		# Extract and validate host is not empty (prevents malformed URLs like http:///path)
-		local host="${base_url#*://}"
-		host="${host%%/*}"
-		if [[ -z "$host" ]]; then
-			echo "ERROR: Invalid URL: empty host" >&2
-			return 1
-		fi
-
-		# Return values safely via stdout (tab-separated)
-		printf '%s\t%s\n' "$base_url" "$model"
-	else
-		echo "ERROR: Invalid OpenAI spec format: $spec" >&2
+	# Validate that both segments are non-empty after stripping "openai:" prefix
+	if [[ -z "$base_url" || -z "$model" ]]; then
+		echo "ERROR: Could not parse backend spec: $1" >&2
 		return 1
 	fi
+
+	# Validate URL scheme to prevent SSRF
+	if [[ ! "$base_url" =~ ^https?:// ]]; then
+		echo "ERROR: Invalid URL scheme in backend spec" >&2
+		return 1
+	fi
+
+	# Extract and validate host is not empty (prevents malformed URLs like http:///path)
+	local host="${base_url#*://}"
+	host="${host%%/*}"
+	if [[ -z "$host" ]]; then
+		echo "ERROR: Invalid URL: empty host" >&2
+		return 1
+	fi
+
+	# Validate URL and model are not whitespace-only
+	if [[ "$base_url" =~ ^[[:space:]]+$ ]]; then
+		echo "ERROR: Base URL cannot be whitespace" >&2
+		return 1
+	fi
+	if [[ "$model" =~ ^[[:space:]]+$ ]]; then
+		echo "ERROR: Model cannot be whitespace" >&2
+		return 1
+	fi
+
+	# Return values safely via stdout (tab-separated)
+	printf '%s\t%s\n' "$base_url" "$model"
 }
 
 # Send request to OpenAI-compatible API
@@ -57,6 +65,12 @@ _parse_openai_spec() {
 _infer_openai() {
 	local spec="$1" system="$2" context="$3" outfile="${4:-}"
 	local base_url model api_key response content
+
+	# Early validation: spec must start with "openai:" prefix (TYPE_SAFETY)
+	if ! [[ "$spec" =~ ^openai: ]]; then
+		echo "ERROR: Invalid OpenAI spec: must start with 'openai:'" >&2
+		return 1
+	fi
 
 	# Validate timeout (must be numeric)
 	local timeout="${MNTO_TIMEOUT:-120}"

@@ -25,6 +25,14 @@ infer() {
 	local system="$2"
 	local context="$3"
 	local outfile="${4:-}"
+
+	# Validate role parameter (TYPE_SAFETY: guard against invalid roles)
+	local allowed_roles="planner|proposer|verifier|stitcher"
+	if ! [[ "$role" =~ ^($allowed_roles)$ ]]; then
+		echo "ERROR: Invalid role '$role' (must be one of: $allowed_roles)" >&2
+		return 1
+	fi
+
 	local backend
 	backend="$(_resolve_backend "$role")"
 
@@ -40,17 +48,13 @@ infer() {
 		;;
 	openai)
 		# OpenAI backend requires full spec: openai:URL:MODEL (two colons after prefix)
-		case "$backend" in
-			openai:*:*)
-				# Valid spec: openai:URL:MODEL
-				_infer_openai "$backend" "$system" "$context" "$outfile"
-				;;
-			*)
-				# Invalid: missing URL and/or model segments
-				echo "ERROR: OpenAI backend requires spec format openai:URL:MODEL" >&2
-				return 1
-				;;
-		esac
+		if _valid_openai_spec "$backend"; then
+			_infer_openai "$backend" "$system" "$context" "$outfile"
+		else
+			# Invalid: missing URL and/or model segments
+			echo "ERROR: OpenAI backend requires spec format openai:URL:MODEL" >&2
+			return 1
+		fi
 		;;
 	*)
 		# Unknown backend type
@@ -58,6 +62,34 @@ infer() {
 		return 1
 		;;
 	esac
+}
+
+# Usage: _valid_openai_spec <backend_spec>
+# Check if backend spec has valid OpenAI format (prefix with 2 colons minimum)
+# Rejects whitespace-only URL/model segments and malformed one-colon forms
+# Returns: 0 if valid, 1 if invalid
+_valid_openai_spec() {
+	local backend_spec="$1"
+
+	# Must start with "openai:" and have at least 2 more colons for URL:MODEL
+	[[ "$backend_spec" =~ ^openai:.*:.* ]] || return 1
+
+	# Strip "openai:" prefix and check segments
+	local url_and_model="${backend_spec#openai:}"
+
+	# Extract URL and model by splitting on last colon
+	local url="${url_and_model%:*}"
+	local model="${url_and_model##*:}"
+
+	# Reject empty segments
+	[[ -n "$url" ]] || return 1
+	[[ -n "$model" ]] || return 1
+
+	# Reject whitespace-only segments
+	[[ ! "$url" =~ ^[[:space:]]+$ ]] || return 1
+	[[ ! "$model" =~ ^[[:space:]]+$ ]] || return 1
+
+	return 0
 }
 
 # Usage: _resolve_backend <role>

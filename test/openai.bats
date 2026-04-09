@@ -81,6 +81,14 @@ teardown() {
 	assert_equal "$model" "qwen3:30b-a3b"
 }
 
+# Test _parse_openai_spec with complex model containing multiple colons
+@test "_parse_openai_spec parses model with multiple colons" {
+	local spec="openai:http://localhost:11434/v1:qwen3:30b-a3b:latest"
+	_parse_openai_spec "$spec" | IFS=$'\t' read -r base_url model
+	assert_equal "$base_url" "http://localhost:11434/v1"
+	assert_equal "$model" "qwen3:30b-a3b:latest"
+}
+
 # Test _parse_openai_spec with HTTPS
 @test "_parse_openai_spec parses HTTPS URL" {
 	local spec="openai:https://api.openai.com/v1:gpt-4o-mini"
@@ -320,6 +328,19 @@ teardown() {
 	assert_output --partial "Invalid URL scheme"
 }
 
+# Test _infer_openai early validation rejects spec without openai prefix
+@test "_infer_openai early validation rejects spec without prefix" {
+	unset MNTO_API_KEY OPENAI_API_KEY
+
+	local spec="invalid:http://localhost:11434/v1:qwen3"
+	local system="You are helpful."
+	local context="Say hello."
+
+	run _infer_openai "$spec" "$system" "$context"
+	assert_failure
+	assert_output --partial "ERROR: Invalid OpenAI spec: must start with 'openai:'"
+}
+
 # Test _parse_openai_spec rejects URL without scheme
 @test "_parse_openai_spec rejects URL without scheme" {
 	local spec="openai:localhost:11434/v1:qwen3"
@@ -431,4 +452,44 @@ teardown() {
 	run _infer_openai "$spec" "$system" "$context"
 	assert_failure
 	assert_output --partial "Context too long"
+}
+
+# Test _parse_openai_spec rejects whitespace-only URL
+@test "_parse_openai_spec rejects whitespace-only URL" {
+	local spec="openai:   :qwen3"
+	run _parse_openai_spec "$spec"
+	assert_failure
+	assert_output --partial "Base URL cannot be whitespace"
+}
+
+# Test _parse_openai_spec rejects whitespace-only model
+@test "_parse_openai_spec rejects whitespace-only model" {
+	local spec="openai:http://localhost:11434/v1:   "
+	run _parse_openai_spec "$spec"
+	assert_failure
+	assert_output --partial "Model cannot be whitespace"
+}
+
+# Test _parse_openai_spec rejects malformed one-colon form
+@test "_parse_openai_spec rejects malformed one-colon form" {
+	source lib/backend.bash
+	local spec="openai:"
+	run _valid_openai_spec "$spec"
+	assert_failure
+}
+
+# Test _valid_openai_spec rejects whitespace-only URL segment
+@test "_valid_openai_spec rejects whitespace-only URL segment" {
+	source lib/backend.bash
+	local spec="openai:   :qwen3"
+	run _valid_openai_spec "$spec"
+	assert_failure
+}
+
+# Test _valid_openai_spec rejects whitespace-only model segment
+@test "_valid_openai_spec rejects whitespace-only model segment" {
+	source lib/backend.bash
+	local spec="openai:http://localhost:11434/v1:   "
+	run _valid_openai_spec "$spec"
+	assert_failure
 }

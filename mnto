@@ -79,6 +79,9 @@ Options:
   --proposer {spec}     Model spec for proposer/planner/stitcher (apfel or openai:URL:MODEL)
   --verifier {spec}     Model spec for verifier (apfel or openai:URL:MODEL)
   --vipune              Enable vipune semantic search integration
+
+Model selection precedence:
+  --proposer/--verifier > MNTO_PROPOSER/MNTO_VERIFIER > MNTO_MODEL > apfel
 EOF
 }
 
