@@ -21,22 +21,22 @@ readonly C_BLUE='\033[0;34m'
 # Validate task ID format (security)
 validate_id() {
 	local id="$1"
-	if [[ ! "$id" =~ ^[a-z0-9]{3}$ ]]; then
+	if [[ ! "$id" =~ ^[a-z]{3}$ ]]; then
 		echo "ERROR: Invalid task ID format '$id'" >&2
 		return 1
 	fi
 	return 0
 }
 
-# Generate 3-char lowercase alphanumeric ID with collision detection
+# Generate 3-char lowercase alphabetic ID with collision detection
 gen_id() {
-	local chars="0123456789abcdefghijklmnopqrstuvwxyz"
+	local chars="abcdefghijklmnopqrstuvwxyz"
 	local id=""
 	local i
 	while true; do
 		id=""
 		for ((i = 0; i < 3; i++)); do
-			id+="${chars:$((RANDOM % 36)):1}"
+			id+="${chars:$((RANDOM % 26)):1}"
 		done
 		# Collision check - regenerate if directory already exists
 		# shellcheck disable=SC2153 # BB_DIR is defined in mnto at runtime

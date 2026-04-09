@@ -127,7 +127,7 @@ teardown() {
 	# Verify task directory exists via list
 	run "$TEST_MNTO" --list
 	[[ $status -eq 0 ]]
-	[[ "$output" == *[a-z0-9][a-z0-9][a-z0-9]* ]]
+	[[ "$output" == *[a-z][a-z][a-z]* ]]
 }
 
 @test "mnto --list shows tasks" {
@@ -139,7 +139,7 @@ teardown() {
 	run "$TEST_MNTO" --list
 	[[ $status -eq 0 ]]
 	[[ "${#lines[@]}" -ge 2 ]]
-	[[ "${lines[0]}" =~ ^[a-z0-9]{3}$ ]] || [[ "${lines[1]}" =~ ^[a-z0-9]{3}$ ]]
+	[[ "${lines[0]}" =~ ^[a-z]{3}$ ]] || [[ "${lines[1]}" =~ ^[a-z]{3}$ ]]
 }
 
 @test "mnto --resume fails for non-existent task" {
@@ -151,10 +151,10 @@ teardown() {
 @test "mnto --resume existing task" {
 	run "$TEST_MNTO" "Test task"
 	[[ $status -eq 0 ]]
-	# Extract task ID from "Created task: XYZ" where XYZ is exactly 3 lowercase alphanumeric
+	# Extract task ID from "Created task: XYZ" where XYZ is exactly 3 lowercase letters
 	local tid="${lines[0]}"
 	tid="${tid##*Created task: }"
-	[[ "$tid" =~ ^[a-z0-9]{3}$ ]] || return 1
+	[[ "$tid" =~ ^[a-z]{3}$ ]] || return 1
 
 	run "$TEST_MNTO" --resume "$tid"
 	[[ $status -eq 0 ]]
@@ -166,7 +166,7 @@ teardown() {
 	local id
 	id="$(gen_id)"
 	[ ${#id} -eq 3 ]
-	[[ "$id" =~ ^[a-z0-9]{3}$ ]]
+	[[ "$id" =~ ^[a-z]{3}$ ]]
 }
 
 @test "next_task returns first waiting subtask" {
