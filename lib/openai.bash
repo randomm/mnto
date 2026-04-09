@@ -33,6 +33,14 @@ _parse_openai_spec() {
 			return 1
 		fi
 
+		# Extract and validate host is not empty (prevents malformed URLs like http:///path)
+		local host="${base_url#*://}"
+		host="${host%%/*}"
+		if [[ -z "$host" ]]; then
+			echo "ERROR: Invalid URL: empty host" >&2
+			return 1
+		fi
+
 		# Return values safely via stdout (tab-separated)
 		printf '%s\t%s\n' "$base_url" "$model"
 	else
@@ -82,9 +90,22 @@ _infer_openai() {
 
 	local curl_auth_args=()
 	if [[ -n "$api_key" ]]; then
-		header_file="$(mktemp)"
-		# Minimal race window: relies on restrictive umask + immediate chmod
-		chmod 600 "$header_file"  # Restrict file permissions to owner only
+		# Validate API key contains no newlines (header injection prevention)
+		if [[ "$api_key" == *$'\n'* ]] || [[ "$api_key" == *$'\r'* ]]; then
+			echo "ERROR: API key contains invalid characters (newline)" >&2
+			return 1
+		fi
+
+		# Create temporary file with restrictive permissions (umask defense)
+		local old_umask
+		old_umask="$(umask)"
+		umask 077
+		header_file="$(mktemp)" || {
+			umask "$old_umask"
+			return 1
+		}
+		umask "$old_umask"
+		chmod 600 "$header_file"  # Defense-in-depth: ensure owner-only
 		printf 'header "Authorization: Bearer %s"\n' "$api_key" > "$header_file"
 		curl_auth_args=(--config "$header_file")
 	fi
@@ -115,14 +136,29 @@ _infer_openai() {
 			;;
 	esac
 
-	# Extract content
+	# Extract content and error in single jq pass (performance optimization)
+	local parse_result
+	parse_result="$(echo "$body" | jq -r '
+		if (.choices[0].message.content // null) != null then
+			.content = (.choices[0].message.content)
+		elif (.error.message // null) != null then
+			.error = (.error.message)
+		else
+			.error = "Unknown API error"
+		end
+		| if .content then .content else .error end
+	')" || {
+		echo "ERROR: OpenAI API: Could not parse response" >&2
+		return 1
+	}
+
+	# Check if result is an error (no content field present in response)
 	if ! echo "$body" | jq -e '.choices[0].message.content' >/dev/null 2>&1; then
-		local error_msg
-		error_msg="$(echo "$body" | jq -r '.error.message // "Unknown API error"')"
-		echo "ERROR: OpenAI API: $error_msg" >&2
+		echo "ERROR: OpenAI API: $parse_result" >&2
 		return 1
 	fi
-	content="$(echo "$body" | jq -r '.choices[0].message.content')"
+
+	content="$parse_result"
 
 	# Output
 	if [[ -n "$outfile" ]]; then

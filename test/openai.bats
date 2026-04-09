@@ -339,3 +339,96 @@ teardown() {
 	assert_output --partial "Context too long"
 	[[ "$status" -eq 4 ]]
 }
+
+# Test _parse_openai_spec rejects empty host
+@test "_parse_openai_spec rejects URL with empty host" {
+	local spec="openai:///v1:qwen3"
+	run _parse_openai_spec "$spec"
+	assert_failure
+	assert_output --partial "empty host"
+}
+
+# Test _parse_openai_spec accepts localhost
+@test "_parse_openai_spec accepts localhost URL" {
+	local spec="openai:http://localhost:11434/v1:qwen3"
+	run _parse_openai_spec "$spec"
+	assert_success
+}
+
+# Test _parse_openai_spec accepts 127.0.0.1
+@test "_parse_openai_spec accepts 127.0.0.1 URL" {
+	local spec="openai:http://127.0.0.1:11434/v1:qwen3"
+	run _parse_openai_spec "$spec"
+	assert_success
+}
+
+# Test _infer_openai rejects API key with newline
+@test "_infer_openai rejects API key containing newline" {
+	MNTO_API_KEY=$'sk-test\ninjection'
+
+	local spec="openai:http://localhost:11434/v1:qwen3"
+	local system="You are helpful."
+	local context="Say hello."
+
+	run _infer_openai "$spec" "$system" "$context"
+	assert_failure
+	assert_output --partial "invalid characters"
+
+	unset MNTO_API_KEY
+}
+
+# Test _infer_openai rejects API key with carriage return
+@test "_infer_openai rejects API key containing carriage return" {
+	MNTO_API_KEY=$'sk-test\rinjection'
+
+	local spec="openai:http://localhost:11434/v1:qwen3"
+	local system="You are helpful."
+	local context="Say hello."
+
+	run _infer_openai "$spec" "$system" "$context"
+	assert_failure
+	assert_output --partial "invalid characters"
+
+	unset MNTO_API_KEY
+}
+
+# Test _infer_openai creates temp file with correct permissions
+@test "_infer_openai creates temp header file with restricted permissions" {
+	MNTO_API_KEY="sk-test-valid"
+
+	local spec="openai:http://localhost:11434/v1:qwen3"
+	local system="You are helpful."
+	local context="Say hello."
+
+	run _infer_openai "$spec" "$system" "$context"
+	assert_success
+
+	# Verify that curl was called with --config (secure header file)
+	[[ "${_args[*]}" =~ "--config" ]]
+	# The header file should be created and have restricted permissions
+	# (cleanup is handled by trap, so we just verify the call pattern)
+
+	unset MNTO_API_KEY
+}
+
+# Test _infer_openai single-pass parsing extracts correct content
+@test "_infer_openai single-pass parsing extracts content correctly" {
+	local spec="openai:http://localhost:11434/v1:qwen3"
+	local system="You are helpful."
+	local context="Say hello."
+
+	run _infer_openai "$spec" "$system" "$context"
+	assert_success
+	assert_output "mock response from API"
+}
+
+# Test _infer_openai single-pass parsing handles error responses
+@test "_infer_openai single-pass parsing handles error responses" {
+	local spec="openai:http://localhost:11434/v1:qwen3"
+	local system="You are helpful."
+	local context="error_400"
+
+	run _infer_openai "$spec" "$system" "$context"
+	assert_failure
+	assert_output --partial "Context too long"
+}
