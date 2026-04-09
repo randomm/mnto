@@ -33,14 +33,16 @@ fi
 
 # Dependency tree:
 # mnto
+# ├── openai.bash (OpenAI backend implementation)
 # ├── blackboard.bash
-# ├── backend.bash (unified inference abstraction)
+# ├── backend.bash (unified inference abstraction — depends on openai.bash)
 # ├── planner.bash
 # ├── harness.bash (depends on: blackboard.bash, planner.bash)
 # ├── stitcher.bash (depends on: blackboard.bash, planner.bash)
 # └── maintenance.bash (depends on: blackboard.bash)
 
-# Source library functions
+# Source library functions (openai.bash before backend.bash for _infer_openai)
+source "$SCRIPT_DIR/lib/openai.bash"
 source "$SCRIPT_DIR/lib/blackboard.bash"
 source "$SCRIPT_DIR/lib/backend.bash"
 source "$SCRIPT_DIR/lib/maintenance.bash"

@@ -14,6 +14,7 @@ readonly RESULTS_DIR="$SCRIPT_DIR/results"
 
 # Backend configuration
 BACKEND=""
+BACKEND_EXPLICIT=false
 readonly DEFAULT_BACKEND="apfel"
 
 # Global metrics
@@ -44,10 +45,13 @@ BACKEND SELECTION:
     --backend apfel        Use apfel CLI for inference
     --backend openai       Use OpenAI API for inference (requires OPENAI_API_KEY or MNTO_API_KEY)
 
-    If --backend is not specified, backend is auto-detected from:
-    1. MNTO_VERIFIER environment variable
-    2. MNTO_MODEL environment variable
-    3. Default: apfel
+    Backend precedence (from highest to lowest):
+    1. --backend flag (explicit override, takes precedence)
+    2. MNTO_VERIFIER environment variable
+    3. MNTO_MODEL environment variable
+    4. Default: apfel
+
+    When --backend is provided, it overrides any existing MNTO_MODEL for this run.
 
 EXAMPLES:
     e2e-qa.sh                    # Run all scenarios with auto-detected backend
@@ -85,6 +89,19 @@ now_seconds() {
 extract_backend_prefix() {
 	local spec="$1"
 	echo "${spec%%:*}"
+}
+
+# Warn if --backend is explicitly overriding a mismatched MNTO_MODEL value
+_warn_on_backend_override() {
+	local expected_backend="$1"
+	if [[ "$BACKEND_EXPLICIT" == true ]] && [[ -n "${MNTO_MODEL:-}" ]]; then
+		local old_model="${MNTO_MODEL}"
+		local old_backend
+		old_backend=$(extract_backend_prefix "$old_model")
+		if [[ "$old_backend" != "$expected_backend" ]]; then
+			log "WARNING: --backend ${expected_backend} overriding existing MNTO_MODEL=$old_model"
+		fi
+	fi
 }
 
 detect_backend() {
@@ -192,12 +209,19 @@ collect_scenario_metrics() {
 	log_section "Running scenario: ${scenario_name}"
 	log "Goal: $(head -1 "${scenario_path}")"
 
-	# Set environment based on backend if not already set
-	# This ensures --backend actually influences mnto run
-	if [[ "$BACKEND" == "openai" ]] && [[ -z "${MNTO_MODEL:-}" ]]; then
-		export MNTO_MODEL="openai:http://localhost:11434/v1:gpt-4o-mini"
-	elif [[ "$BACKEND" == "apfel" ]] && [[ -z "${MNTO_MODEL:-}" ]]; then
-		export MNTO_MODEL="apfel"
+	# Set environment based on backend
+	# Only override MNTO_MODEL when --backend is explicit or MNTO_MODEL is empty
+	if [[ "$BACKEND" == "openai" ]]; then
+		if [[ "$BACKEND_EXPLICIT" == true ]] || [[ -z "${MNTO_MODEL:-}" ]]; then
+			_warn_on_backend_override "openai"
+			# Default endpoint is localhost:11434/v1 for local Ollama testing
+			export MNTO_MODEL="${E2E_OPENAI_MODEL:-openai:http://localhost:11434/v1:llama3.2}"
+		fi
+	elif [[ "$BACKEND" == "apfel" ]]; then
+		if [[ "$BACKEND_EXPLICIT" == true ]] || [[ -z "${MNTO_MODEL:-}" ]]; then
+			_warn_on_backend_override "apfel"
+			export MNTO_MODEL="apfel"
+		fi
 	fi
 
 	# Run mnto with the scenario goal
@@ -363,6 +387,7 @@ main() {
 			;;
 		--backend)
 			BACKEND="$2"
+			BACKEND_EXPLICIT=true
 			shift 2
 			;;
 		--dry-run)
@@ -398,8 +423,16 @@ main() {
 		exit 1
 	fi
 
-	# Log detected backend
-	echo "Using backend: ${BACKEND}"
+	# Log detected backend and source
+	if [[ "$BACKEND_EXPLICIT" == true ]]; then
+		echo "Backend: ${BACKEND} (explicit --backend override, MNTO_MODEL will be set for this run)"
+	elif [[ -n "${MNTO_VERIFIER:-}" ]]; then
+		echo "Backend: ${BACKEND} (auto-detected from MNTO_VERIFIER)"
+	elif [[ -n "${MNTO_MODEL:-}" ]]; then
+		echo "Backend: ${BACKEND} (auto-detected from MNTO_MODEL)"
+	else
+		echo "Backend: ${BACKEND} (default)"
+	fi
 
 	# Initialize
 	init_results_dir
