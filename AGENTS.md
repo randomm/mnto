@@ -41,6 +41,8 @@ Before creating ANY code, ask:
 
 ## Pre-Push Quality Gates
 
+**NOTE: No CI is configured. Local checks are the ONLY verification.**
+
 Before ANY `git push`, all checks must pass locally:
 
 ```bash
@@ -57,7 +59,7 @@ shfmt -w mnto lib/*.bash test/*.bats
 bats test/
 ```
 
-Never push to "see if CI catches anything." Fix locally first.
+Fix locally before pushing. There is no remote verification pipeline.
 
 ---
 
@@ -136,7 +138,7 @@ docs: update AGENTS.md with testing standards
 **PR Workflow**:
 - Link PR to issue with `Fixes #123` in body
 - Include issue number in commit messages
-- All checks must pass before merge
+- All local checks must pass before merge (no CI pipeline exists)
 - Adversarial review required for all PRs
 
 **Never**:
@@ -367,9 +369,7 @@ What needs to be done.
 
 ---
 
-## Local-First Quality Gates
-
-**CI is for VERIFICATION, not DISCOVERY.**
+## Local Quality Gates
 
 Before ANY `git push`:
 1. All tests pass (0 failures)
@@ -378,7 +378,7 @@ Before ANY `git push`:
 4. Formatting applied (`shfmt -w`)
 5. Syntax validates (`bash -n`)
 
-**Fix locally first.** Never push to see if CI catches issues.
+**Fix locally before pushing.** There is no remote verification pipeline.
 
 ---
 
