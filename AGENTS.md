@@ -41,8 +41,6 @@ Before creating ANY code, ask:
 
 ## Pre-Push Quality Gates
 
-**NOTE: No CI is configured. Local checks are the ONLY verification.**
-
 Before ANY `git push`, all checks must pass locally:
 
 ```bash
@@ -59,7 +57,9 @@ shfmt -w mnto lib/*.bash test/*.bats
 bats test/
 ```
 
-Fix locally before pushing. There is no remote verification pipeline.
+**NOTE**: No CI is configured. Verification is local-only.
+
+NEVER push without all local checks passing.
 
 ---
 
@@ -369,7 +369,9 @@ What needs to be done.
 
 ---
 
-## Local Quality Gates
+## Local-First Quality Gates
+
+**CI is for VERIFICATION, not DISCOVERY.**
 
 Before ANY `git push`:
 1. All tests pass (0 failures)
@@ -378,7 +380,9 @@ Before ANY `git push`:
 4. Formatting applied (`shfmt -w`)
 5. Syntax validates (`bash -n`)
 
-**Fix locally before pushing.** There is no remote verification pipeline.
+**NOTE**: No CI is configured. Verification is local-only.
+
+NEVER push without all local checks passing.
 
 ---
 

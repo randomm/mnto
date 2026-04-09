@@ -1,9 +1,6 @@
 # Runtime state
 .mnto/
 
-# Git worktrees
-.worktrees/
-
 # Apfel binary
 apfel
 
