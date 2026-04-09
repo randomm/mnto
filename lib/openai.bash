@@ -7,7 +7,7 @@ declare -r _OPENAI_SOURCED=1
 
 # Parse OpenAI backend specification
 # Usage: _parse_openai_spec SPEC
-# Sets: base_url, model (variables in caller scope)
+# Prints: base_url\tmodel (tab-separated)
 # Spec format: openai:SCHEME://HOST:PORT/PATH:MODEL
 # Example: openai:http://localhost:11434/v1:qwen3:30b-a3b
 _parse_openai_spec() {
@@ -19,21 +19,24 @@ _parse_openai_spec() {
 	# Match: scheme://host/path:MODEL (supports optional port in host part)
 	# This handles: http://localhost:11434/v1:qwen3 and localhost:11434/v1:qwen3:30b
 	if [[ "$url_and_model" =~ ^(https?://[^:/]+(?::[0-9]+)?[^:]*):(.+)$ ]]; then
-		base_url="${BASH_REMATCH[1]}"
-		model="${BASH_REMATCH[2]}"
+		local base_url="${BASH_REMATCH[1]}"
+		local model="${BASH_REMATCH[2]}"
+
+		if [[ -z "$base_url" || -z "$model" ]]; then
+			echo "ERROR: Could not parse backend spec: $1" >&2
+			return 1
+		fi
+
+		# Validate URL scheme to prevent SSRF
+		if [[ ! "$base_url" =~ ^https?:// ]]; then
+			echo "ERROR: Invalid URL scheme in backend spec" >&2
+			return 1
+		fi
+
+		# Return values safely via stdout (tab-separated)
+		printf '%s\t%s\n' "$base_url" "$model"
 	else
 		echo "ERROR: Invalid OpenAI spec format: $spec" >&2
-		return 1
-	fi
-
-	if [[ -z "$base_url" || -z "$model" ]]; then
-		echo "ERROR: Could not parse backend spec: $1" >&2
-		return 1
-	fi
-
-	# Validate URL scheme to prevent SSRF
-	if [[ ! "$base_url" =~ ^https?:// ]]; then
-		echo "ERROR: Invalid URL scheme in backend spec" >&2
 		return 1
 	fi
 }
@@ -55,7 +58,10 @@ _infer_openai() {
 	fi
 
 	# Parse spec — CRITICAL: URL contains colons, model is LAST segment
-	_parse_openai_spec "$spec" || return 1
+	# Returns tab-separated base_url and model from _parse_openai_spec
+	local parse_result
+	parse_result="$(_parse_openai_spec "$spec")" || return 1
+	IFS=$'\t' read -r base_url model <<<"$parse_result"
 
 	api_key="${MNTO_API_KEY:-${OPENAI_API_KEY:-}}"
 
@@ -68,14 +74,17 @@ _infer_openai() {
 		'{model:$model, messages:[{role:"system",content:$sys},{role:"user",content:$ctx}]}'
 	)" || return 1
 
-	# Send request with secure header file to avoid exposing API key in process list
-	local header_file=""
-	_cleanup_header() { [[ -n "$header_file" ]] && rm -f "$header_file"; }
-	trap '_cleanup_header' RETURN INT TERM HUP
+# Send request with secure header file to avoid exposing API key in process list
+ 	local header_file=""
+ 	# shellcheck disable=SC2329  # invoked via trap
+ 	_cleanup_header() { [[ -n "$header_file" ]] && rm -f "$header_file"; }
+ 	trap '_cleanup_header' RETURN INT TERM HUP
 
 	local curl_auth_args=()
 	if [[ -n "$api_key" ]]; then
 		header_file="$(mktemp)"
+		# Minimal race window: relies on restrictive umask + immediate chmod
+		chmod 600 "$header_file"  # Restrict file permissions to owner only
 		printf 'header "Authorization: Bearer %s"\n' "$api_key" > "$header_file"
 		curl_auth_args=(--config "$header_file")
 	fi
@@ -91,6 +100,7 @@ _infer_openai() {
 	)" || return 1
 
 	# Extract HTTP status code and body using parameter expansion
+	# Separator is $'\x1f' (unit separator), HTTP code is after it
 	http_code="${response##*$'\x1f'}"
 	local body="${response%$'\x1f'"$http_code"}"
 

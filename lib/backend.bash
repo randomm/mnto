@@ -28,36 +28,36 @@ infer() {
 	local backend
 	backend="$(_resolve_backend "$role")"
 
-	# Validate backend spec format
-	case "$backend" in
-		openai:*:*)
-			;; # valid openai spec: prefix plus two colons (URL:MODEL)
-		openai|openai:*)
-			echo "ERROR: OpenAI backend requires spec format openai:URL:MODEL" >&2
-			return 1
-			;;
-		apfel|apfel:*)
-			;; # valid apfel backend (with or without spec)
-		*)
-			echo "ERROR: Invalid backend specification: $backend (expected openai:URL:MODEL)" >&2
-			return 1
-			;;
-	esac
-
-	local exit_code=0
-	case "${backend%%:*}" in
+	# Unified validation and dispatch:
+	# - Extract backend type (before first colon)
+	# - Validate according to type
+	# - Dispatch to appropriate function
+	local backend_type="${backend%%:*}"
+	case "$backend_type" in
 	apfel)
-		_infer_apfel "$system" "$context" "$outfile" || exit_code=$?
+		# apfel backend accepts both "apfel" and "apfel:spec"
+		_infer_apfel "$system" "$context" "$outfile"
 		;;
-	openai:*)
-		_infer_openai "$backend" "$system" "$context" "$outfile" || exit_code=$?
+	openai)
+		# OpenAI backend requires full spec: openai:URL:MODEL (two colons after prefix)
+		case "$backend" in
+			openai:*:*)
+				# Valid spec: openai:URL:MODEL
+				_infer_openai "$backend" "$system" "$context" "$outfile"
+				;;
+			*)
+				# Invalid: missing URL and/or model segments
+				echo "ERROR: OpenAI backend requires spec format openai:URL:MODEL" >&2
+				return 1
+				;;
+		esac
 		;;
 	*)
-		echo "ERROR: Unknown backend: $backend" >&2
+		# Unknown backend type
+		echo "ERROR: Invalid backend specification: $backend (expected openai:URL:MODEL)" >&2
 		return 1
 		;;
 	esac
-	return "$exit_code"
 }
 
 # Usage: _resolve_backend <role>
@@ -69,17 +69,33 @@ infer() {
 # Returns: backend identifier string
 _resolve_backend() {
 	local role="$1"
+	local result
+
+	# Try role-specific env var first
 	case "$role" in
 	verifier)
-		echo "${MNTO_VERIFIER:-${MNTO_MODEL:-apfel}}"
+		if [[ -n "${MNTO_VERIFIER:-}" ]]; then
+			result="$MNTO_VERIFIER"
+		else
+			# Fall back to generic model var
+			result="${MNTO_MODEL:-apfel}"
+		fi
 		;;
 	planner | proposer | stitcher)
-		echo "${MNTO_PROPOSER:-${MNTO_MODEL:-apfel}}"
+		if [[ -n "${MNTO_PROPOSER:-}" ]]; then
+			result="$MNTO_PROPOSER"
+		else
+			# Fall back to generic model var
+			result="${MNTO_MODEL:-apfel}"
+		fi
 		;;
 	*)
-		echo "${MNTO_MODEL:-apfel}"
+		# Unknown role: use generic model var
+		result="${MNTO_MODEL:-apfel}"
 		;;
 	esac
+
+	echo "$result"
 }
 
 # Usage: _infer_apfel <system_prompt> <context> [output_file]

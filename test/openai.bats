@@ -60,66 +60,43 @@ teardown() {
 # Test _parse_openai_spec with simple URL
 @test "_parse_openai_spec parses simple HTTP URL" {
 	local spec="openai:http://localhost:11434/v1:qwen3"
-	# Run in subshell to capture variables
-	run bash -c "
-		source lib/openai.bash
-		_parse_openai_spec '$spec' && echo \"base_url=\$base_url\" && echo \"model=\$model\"
-	"
-	assert_success
-	assert_line --partial "base_url=http://localhost:11434/v1"
-	assert_line --partial "model=qwen3"
+	_parse_openai_spec "$spec" | IFS=$'\t' read -r base_url model
+	assert_equal "$base_url" "http://localhost:11434/v1"
+	assert_equal "$model" "qwen3"
 }
 
 # Test _parse_openai_spec with port in URL
 @test "_parse_openai_spec parses URL with port" {
 	local spec="openai:http://localhost:8080/v1:llama3"
-	run bash -c "
-		source lib/openai.bash
-		_parse_openai_spec '$spec' && echo \"base_url=\$base_url\" && echo \"model=\$model\"
-	"
-	assert_success
-	assert_line --partial "base_url=http://localhost:8080/v1"
-	assert_line --partial "model=llama3"
+	_parse_openai_spec "$spec" | IFS=$'\t' read -r base_url model
+	assert_equal "$base_url" "http://localhost:8080/v1"
+	assert_equal "$model" "llama3"
 }
 
 # Test _parse_openai_spec with model containing colon
 @test "_parse_openai_spec parses model with colon" {
 	local spec="openai:http://localhost:11434/v1:qwen3:30b-a3b"
-	run bash -c "
-		source lib/openai.bash
-		_parse_openai_spec '$spec' && echo \"base_url=\$base_url\" && echo \"model=\$model\"
-	"
-	assert_success
-	assert_line --partial "base_url=http://localhost:11434/v1"
-	assert_line --partial "model=qwen3:30b-a3b"
+	_parse_openai_spec "$spec" | IFS=$'\t' read -r base_url model
+	assert_equal "$base_url" "http://localhost:11434/v1"
+	assert_equal "$model" "qwen3:30b-a3b"
 }
 
 # Test _parse_openai_spec with HTTPS
 @test "_parse_openai_spec parses HTTPS URL" {
 	local spec="openai:https://api.openai.com/v1:gpt-4o-mini"
-	run bash -c "
-		source lib/openai.bash
-		_parse_openai_spec '$spec' && echo \"base_url=\$base_url\" && echo \"model=\$model\"
-	"
-	assert_success
-	assert_line --partial "base_url=https://api.openai.com/v1"
-	assert_line --partial "model=gpt-4o-mini"
+	_parse_openai_spec "$spec" | IFS=$'\t' read -r base_url model
+	assert_equal "$base_url" "https://api.openai.com/v1"
+	assert_equal "$model" "gpt-4o-mini"
 }
 
 # Test _parse_openai_spec with invalid format
 @test "_parse_openai_spec rejects invalid format" {
 	local spec="invalid:spec:format"
-	run bash -c "
-		source lib/openai.bash
-		_parse_openai_spec '$spec'
-	"
+	run _parse_openai_spec "$spec"
 	assert_failure
 
 	local spec="openai:not-a-url:model"
-	run bash -c "
-		source lib/openai.bash
-		_parse_openai_spec '$spec'
-	"
+	run _parse_openai_spec "$spec"
 	assert_failure
 }
 
@@ -338,10 +315,7 @@ teardown() {
 # Test _parse_openai_spec rejects invalid URL scheme
 @test "_parse_openai_spec rejects invalid URL scheme" {
 	local spec="openai:ftp://localhost:11434/v1:qwen3"
-	run bash -c "
-		source lib/openai.bash
-		_parse_openai_spec '$spec'
-	"
+	run _parse_openai_spec "$spec"
 	assert_failure
 	assert_output --partial "Invalid URL scheme"
 }
@@ -349,10 +323,7 @@ teardown() {
 # Test _parse_openai_spec rejects URL without scheme
 @test "_parse_openai_spec rejects URL without scheme" {
 	local spec="openai:localhost:11434/v1:qwen3"
-	run bash -c "
-		source lib/openai.bash
-		_parse_openai_spec '$spec'
-	"
+	run _parse_openai_spec "$spec"
 	assert_failure
 	assert_output --partial "Invalid URL scheme"
 }
