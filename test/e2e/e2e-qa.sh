@@ -214,6 +214,7 @@ collect_scenario_metrics() {
 	if [[ "$BACKEND" == "openai" ]]; then
 		if [[ "$BACKEND_EXPLICIT" == true ]] || [[ -z "${MNTO_MODEL:-}" ]]; then
 			_warn_on_backend_override "openai"
+			# Default endpoint is localhost:11434/v1 for local Ollama testing
 			export MNTO_MODEL="${E2E_OPENAI_MODEL:-openai:http://localhost:11434/v1:llama3.2}"
 		fi
 	elif [[ "$BACKEND" == "apfel" ]]; then
