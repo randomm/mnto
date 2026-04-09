@@ -386,7 +386,7 @@ ghi details: Write about X, Y, and Z, then conclude"
 		((infer_call_count++)) || true
 		export INFER_CALL_COUNT="$infer_call_count"
 
-		if ((infer_call_count == 1)); then
+if ((infer_call_count == 1)); then
 			# First call (plan): return markdown headers
 			echo "## Introduction"
 			echo "## Installation"
