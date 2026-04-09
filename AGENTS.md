@@ -57,7 +57,9 @@ shfmt -w mnto lib/*.bash test/*.bats
 bats test/
 ```
 
-Never push to "see if CI catches anything." Fix locally first.
+**NOTE**: No CI is configured. Verification is local-only.
+
+NEVER push without all local checks passing.
 
 ---
 
@@ -136,7 +138,7 @@ docs: update AGENTS.md with testing standards
 **PR Workflow**:
 - Link PR to issue with `Fixes #123` in body
 - Include issue number in commit messages
-- All checks must pass before merge
+- All local checks must pass before merge (no CI pipeline exists)
 - Adversarial review required for all PRs
 
 **Never**:
@@ -378,7 +380,9 @@ Before ANY `git push`:
 4. Formatting applied (`shfmt -w`)
 5. Syntax validates (`bash -n`)
 
-**Fix locally first.** Never push to see if CI catches issues.
+**NOTE**: No CI is configured. Verification is local-only.
+
+NEVER push without all local checks passing.
 
 ---
 
