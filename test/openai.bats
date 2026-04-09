@@ -89,6 +89,30 @@ teardown() {
 	assert_equal "$model" "qwen3:30b-a3b:latest"
 }
 
+# Test _parse_openai_spec with gemma4 model (issue #58 fix verification)
+@test "_parse_openai_spec parses gemma4:e4b model correctly" {
+	local spec="openai:http://localhost:11434/v1:gemma4:e4b"
+	_parse_openai_spec "$spec" | IFS=$'\t' read -r base_url model
+	assert_equal "$base_url" "http://localhost:11434/v1"
+	assert_equal "$model" "gemma4:e4b"
+}
+
+# Test _parse_openai_spec backward compat with simple model
+@test "_parse_openai_spec parses llama3.2 model backward compat" {
+	local spec="openai:http://localhost:11434/v1:llama3.2"
+	_parse_openai_spec "$spec" | IFS=$'\t' read -r base_url model
+	assert_equal "$base_url" "http://localhost:11434/v1"
+	assert_equal "$model" "llama3.2"
+}
+
+# Test _parse_openai_spec with anthropic URL format
+@test "_parse_openai_spec parses anthropic URL format" {
+	local spec="openai:https://api.anthropic.com/v1:claude-haiku"
+	_parse_openai_spec "$spec" | IFS=$'\t' read -r base_url model
+	assert_equal "$base_url" "https://api.anthropic.com/v1"
+	assert_equal "$model" "claude-haiku"
+}
+
 # Test _parse_openai_spec with HTTPS
 @test "_parse_openai_spec parses HTTPS URL" {
 	local spec="openai:https://api.openai.com/v1:gpt-4o-mini"
@@ -492,4 +516,28 @@ teardown() {
 	local spec="openai:http://localhost:11434/v1:   "
 	run _valid_openai_spec "$spec"
 	assert_failure
+}
+
+# Test _parse_openai_spec rejects empty model name (issue #58 edge case)
+@test "_parse_openai_spec rejects empty model name" {
+	local spec="openai:http://localhost:11434/v1:"
+	run _parse_openai_spec "$spec"
+	assert_failure
+	assert_output --partial "Model name cannot be empty"
+}
+
+# Test _parse_openai_spec rejects URL without proper scheme after parsing (issue #58 edge case)
+@test "_parse_openai_spec rejects malformed URL without proper scheme" {
+	local spec="openai:http://:11434/v1:model"
+	run _parse_openai_spec "$spec"
+	assert_failure
+	assert_output --partial "Malformed URL"
+}
+
+# Test _parse_openai_spec parses URL with no path segment (issue #58 edge case)
+@test "_parse_openai_spec parses URL with no path segment" {
+	local spec="openai:http://localhost:11434:model"
+	_parse_openai_spec "$spec" | IFS=$'\t' read -r base_url model
+	assert_equal "$base_url" "http://localhost:11434"
+	assert_equal "$model" "model"
 }

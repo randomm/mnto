@@ -18,11 +18,15 @@ _parse_openai_spec() {
 	# Strip "openai:" prefix
 	local url_and_model="${spec#openai:}"
 
-	# Extract base URL and model by splitting on last colon
-	# Base URL is everything before the last colon, model is everything after
-	# This handles: http://localhost:11434/v1:gpt-4 and model names with colons
-	local base_url="${url_and_model%:*}"
-	local model="${url_and_model##*:}"
+	# Split URL from model using path-aware approach
+	# Spec format: openai:SCHEME://HOST:PORT/PATH:MODEL
+	# Model is everything after the first colon in the last path segment
+	# This correctly handles model names like "gemma4:e4b" or "org/model:tag"
+	local after_last_slash="${url_and_model##*/}"
+	local path_end="${after_last_slash%%:*}"
+	local model="${after_last_slash#*:}"
+	local before_last_slash="${url_and_model%/*}"
+	local base_url="${before_last_slash}/${path_end}"
 
 	# Validate that both segments are non-empty after stripping "openai:" prefix
 	if [[ -z "$base_url" || -z "$model" ]]; then
@@ -33,6 +37,13 @@ _parse_openai_spec() {
 	# Validate URL scheme to prevent SSRF
 	if [[ ! "$base_url" =~ ^https?:// ]]; then
 		echo "ERROR: Invalid URL scheme in backend spec" >&2
+		return 1
+	fi
+
+	# Defense-in-depth: validate that base_url still matches https?:// scheme after parsing
+	# (protects against malformed inputs producing unexpected URLs)
+	if [[ ! "$base_url" =~ ^https?://.+ ]]; then
+		echo "ERROR: Malformed URL in backend spec" >&2
 		return 1
 	fi
 
@@ -51,6 +62,13 @@ _parse_openai_spec() {
 	fi
 	if [[ "$model" =~ ^[[:space:]]+$ ]]; then
 		echo "ERROR: Model cannot be whitespace" >&2
+		return 1
+	fi
+
+	# Fail fast on malformed specs with empty model (e.g., "openai:http://localhost:11434/v1:")
+	# Defense-in-depth: validate that model is non-empty after parsing
+	if [[ -z "$model" ]]; then
+		echo "ERROR: Model name cannot be empty in backend spec" >&2
 		return 1
 	fi
 
