@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Draft-verify harness for mnto
 
-# Dependency guard — must source blackboard.bash and planner.bash first
-if [[ "${_BLACKBOARD_SOURCED:-}" != "1" ]] || [[ "${_PLANNER_SOURCED:-}" != "1" ]]; then
-	echo "ERROR: harness.bash requires blackboard.bash and planner.bash to be sourced first" >&2
+# Dependency guard — must source blackboard.bash, backend.bash, and planner.bash first
+if [[ "${_BLACKBOARD_SOURCED:-}" != "1" ]] || [[ "${_BACKEND_SOURCED:-}" != "1" ]] || [[ "${_PLANNER_SOURCED:-}" != "1" ]]; then
+	echo "ERROR: harness.bash requires blackboard.bash, backend.bash, and planner.bash to be sourced first" >&2
 	# shellcheck disable=SC2317
 	return 1 2>/dev/null || exit 1
 fi
@@ -154,19 +154,19 @@ $spec"
 		vctx=$'\n'"$vctx"
 	fi
 
-	# Call apfel with SYS_VERIFY
+	# Call infer verifier with SYS_VERIFY
 	local result
 	local exit_code=0
-	if ! result="$(apfel -q -s "$SYS_VERIFY" "$vctx" 2>/dev/null)"; then
+	if ! result="$(infer verifier "$SYS_VERIFY" "$vctx" 2>/dev/null)"; then
 		exit_code=$?
 		if ((exit_code == 3)); then
-			echo "ERROR: apfel guardrail blocked verification for subtask $subtask_id" >&2
+			echo "ERROR: guardrail blocked verification for subtask $subtask_id" >&2
 			return 1
 		elif ((exit_code == 4)); then
-			echo "ERROR: apfel context overflow during verification for subtask $subtask_id" >&2
+			echo "ERROR: context overflow during verification for subtask $subtask_id" >&2
 			return 1
 		else
-			echo "ERROR: apfel failed for subtask $subtask_id (exit code $exit_code)" >&2
+			echo "ERROR: inference failed for subtask $subtask_id (exit code $exit_code)" >&2
 			return 1
 		fi
 	fi
@@ -301,9 +301,9 @@ draft_subtask() {
 		ctx=$'\n'"$ctx"
 	fi
 
-	# Dry-run mode: show context without calling apfel
+	# Dry-run mode: show context without calling infer
 	if [[ "$DRY_RUN" == "true" ]]; then
-		echo "=== DRY RUN: Would send to apfel ===" >&2
+		echo "=== DRY RUN: Would send to infer ===" >&2
 		echo "System: $SYS_DRAFT" >&2
 		echo "--- Context ---" >&2
 		echo "$ctx" >&2
@@ -311,17 +311,17 @@ draft_subtask() {
 		return 0
 	fi
 
-	# Call apfel with SYS_DRAFT system prompt
-	if ! apfel -q -s "$SYS_DRAFT" "$ctx" >"$draft_file" 2>/dev/null; then
+	# Call infer proposer with SYS_DRAFT system prompt
+	if ! infer proposer "$SYS_DRAFT" "$ctx" "$draft_file" 2>/dev/null; then
 		local exit_code=$?
 		if ((exit_code == 3)); then
-			echo "ERROR: apfel guardrail blocked drafting for subtask $subtask_id" >&2
+			echo "ERROR: guardrail blocked drafting for subtask $subtask_id" >&2
 			return 1
 		elif ((exit_code == 4)); then
-			echo "ERROR: apfel context overflow during drafting for subtask $subtask_id" >&2
+			echo "ERROR: context overflow during drafting for subtask $subtask_id" >&2
 			return 1
 		else
-			echo "ERROR: apfel failed for subtask $subtask_id (exit code $exit_code)" >&2
+			echo "ERROR: inference failed for subtask $subtask_id (exit code $exit_code)" >&2
 			return 1
 		fi
 	fi

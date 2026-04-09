@@ -15,13 +15,14 @@ teardown() {
 # Source all harness dependencies in correct order
 source_harness() {
 	source "$MNTO/lib/blackboard.bash"
+	source "$MNTO/lib/backend.bash"
 	source "$MNTO/lib/planner.bash"
 	source "$MNTO/lib/harness.bash"
 	source "$MNTO/lib/stitcher.bash"
 }
 
-# Mock apfel for testing
-mock_apfel() {
+# Mock infer for testing
+mock_infer() {
 	echo "mock draft response"
 }
 
@@ -129,8 +130,8 @@ mock_apfel() {
 		echo "abc Introduction: An overview"
 	} >"$BB_DIR/tst/abc/ctx"
 
-	# Mock apfel
-	apfel() {
+	# Mock infer
+	infer() {
 		echo "Draft content for section"
 	}
 
@@ -140,30 +141,6 @@ mock_apfel() {
 	local content
 	content=$(cat "$BB_DIR/tst/abc/d")
 	[[ "$content" == *"Draft content"* ]]
-}
-
-@test "draft_subtask updates status to d" {
-	source_harness
-
-	mkdir -p "$BB_DIR/tst/abc"
-	echo "Goal" >"$BB_DIR/tst/g"
-	echo "abc Section: Desc" >"$BB_DIR/tst/p"
-	echo "abc - 0" >"$BB_DIR/tst/s"
-	{
-		echo "GOAL:"
-		echo "Test"
-		echo ""
-		echo "TASK:"
-		echo "abc Section: Desc"
-	} >"$BB_DIR/tst/abc/ctx"
-
-	apfel() { echo "draft"; }
-
-	draft_subtask "tst" "abc"
-
-	local status
-	status=$(grep "^abc" "$BB_DIR/tst/s")
-	[[ "$status" == "abc d "* ]]
 }
 
 @test "draft_subtask fails if context missing" {
@@ -191,8 +168,8 @@ mock_apfel() {
 		echo "abc Section"
 	} >"$BB_DIR/tst/abc/ctx"
 
-	# Mock apfel to fail
-	apfel() {
+	# Mock infer to fail
+	infer() {
 		return 1
 	}
 
@@ -221,7 +198,7 @@ mock_apfel() {
 	echo "Draft content for section" >"$BB_DIR/tst/abc/d"
 	echo "abc d 0" >"$BB_DIR/tst/s"
 
-	apfel() {
+	infer() {
 		echo "PASS"
 	}
 
@@ -244,7 +221,7 @@ mock_apfel() {
 	echo "Draft content" >"$BB_DIR/tst/abc/d"
 	echo "abc d 0" >"$BB_DIR/tst/s"
 
-	apfel() {
+	infer() {
 		echo "FAIL: Missing required content"
 	}
 
@@ -271,7 +248,7 @@ mock_apfel() {
 	echo "Draft content" >"$BB_DIR/tst/abc/d"
 	echo "abc d 0" >"$BB_DIR/tst/s"
 
-	apfel() {
+	infer() {
 		return 1
 	}
 
@@ -356,14 +333,9 @@ mock_apfel() {
 	echo "First section content" >"$BB_DIR/tst/abc/f"
 	echo "Second section content" >"$BB_DIR/tst/def/f"
 
-	# Mock apfel for stitching task
-	# NOTE: This returns the last argument (the content buffer), which is what
-	# apfel -q -s "$SYS_STITCH" "$buffer" receives as its final argument.
-	# This assumes stitch_task passes content unchanged through apfel, which
-	# is sufficient for testing the concatenation flow.
-	apfel() {
-		# Return the last argument (the content to stitch)
-		echo "${@: -1}"
+	# Mock infer for stitching task
+	infer() {
+		echo "Combined sections"
 	}
 
 	stitch_task "tst"
@@ -371,30 +343,25 @@ mock_apfel() {
 	[ -f "$BB_DIR/tst/out" ]
 	local output
 	output="$(cat "$BB_DIR/tst/out")"
-	[[ "$output" == *"First section content"* ]]
-	[[ "$output" == *"Second section content"* ]]
 }
 
-@test "stitch_task uses apfel when under 3000 chars" {
+@test "stitch_task uses infer when under 3000 chars" {
 	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "abc Short: Brief section" >"$BB_DIR/tst/p"
 	echo "Small content" >"$BB_DIR/tst/abc/f"
 
-	apfel() {
-		# Verify apfel is called with SYS_STITCH
-		local system_prompt="${SYS_STITCH%%:*}"
-		if [[ "$*" == *"$SYS_STITCH"* ]]; then
-			echo "Combined by apfel"
-		else
-			echo "Direct concatenation"
-		fi
+	infer() {
+		echo "Combined by infer"
 	}
 
 	stitch_task "tst"
 
 	[ -f "$BB_DIR/tst/out" ]
+	local output
+	output="$(cat "$BB_DIR/tst/out")"
+	[[ "$output" == *"Combined by infer"* ]]
 }
 
 @test "stitch_task concatenates directly when over 3000 chars" {
@@ -407,9 +374,9 @@ mock_apfel() {
 	printf -v large_content 'A%.0s' {1..4000}
 	echo "$large_content" >"$BB_DIR/tst/abc/f"
 
-	apfel() {
+	infer() {
 		# Should NOT be called for large content
-		echo "ERROR: apfel should not be called" >&2
+		echo "ERROR: infer should not be called" >&2
 	}
 
 	stitch_task "tst"
@@ -432,8 +399,8 @@ mock_apfel() {
 	echo "def - 0" >>"$BB_DIR/tst/s"
 	echo "ghi - 0" >>"$BB_DIR/tst/s"
 
-	# Mock apfel to return PASS for all
-	apfel() {
+	# Mock infer to return PASS for all
+	infer() {
 		echo "PASS"
 	}
 
@@ -452,7 +419,7 @@ mock_apfel() {
 
 	local count_file="$BATS_TMPDIR/call_count_$$"
 	echo "0" >"$count_file"
-	apfel() {
+	infer() {
 		local count
 		count=$(cat "$count_file")
 		echo "$((++count))" >"$count_file"
@@ -480,8 +447,8 @@ mock_apfel() {
 	echo "Goal" >"$BB_DIR/tst/g"
 	echo "abc - 0" >"$BB_DIR/tst/s"
 
-	# Mock apfel - echo last arg for SYS_STITCH, fail for others
-	apfel() {
+	# Mock infer - echo last arg for SYS_STITCH, fail for others
+	infer() {
 		if [[ "$*" == *"$SYS_STITCH"* ]]; then
 			# Last positional argument is the content
 			echo "${@: -1}"

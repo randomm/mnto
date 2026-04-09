@@ -22,8 +22,9 @@ setup() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-apfel() {
-  local sys_prompt="$3"
+infer() {
+  local role="\$1"
+  local sys_prompt="\$2"
   # If this is a restructuring call (second pass), return structured format
   if [[ "$sys_prompt" == *"Restructure"* ]] || [[ "$sys_prompt" == *"restructure"* ]]; then
     echo "abc overview: Brief description, 100 words"
@@ -45,6 +46,7 @@ apfel() {
 }
 
 source "\$SCRIPT_DIR/lib/blackboard.bash"
+source "\$SCRIPT_DIR/lib/backend.bash"
 source "\$SCRIPT_DIR/lib/planner.bash"
 
 BB_DIR="$BB_DIR"
@@ -373,15 +375,18 @@ ghi details: Write about X, Y, and Z, then conclude"
 
 @test "generate_plan handles two-pass fallback" {
 	source "$MNTO/lib/blackboard.bash"
+	source "$MNTO/lib/backend.bash"
 	source "$MNTO/lib/planner.bash"
 
-	# Mock apfel to return markdown first, then structured format
-	apfel() {
-		local apfel_call_count="${APEFEL_CALL_COUNT:-0}"
-		((apfel_call_count++)) || true
-		export APEFEL_CALL_COUNT="$apfel_call_count"
+	# Mock infer to return markdown first, then structured format
+	local infer_call_count="${INFER_CALL_COUNT:-0}"
+	export INFER_CALL_COUNT="$infer_call_count"
+	infer() {
+		infer_call_count="${INFER_CALL_COUNT:-0}"
+		((infer_call_count++)) || true
+		export INFER_CALL_COUNT="$infer_call_count"
 
-		if ((apfel_call_count == 1)); then
+		if ((infer_call_count == 1)); then
 			# First call (plan): return markdown headers
 			echo "## Introduction"
 			echo "## Installation"

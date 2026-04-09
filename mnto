@@ -34,6 +34,7 @@ fi
 # Dependency tree:
 # mnto
 # ├── blackboard.bash
+# ├── backend.bash (unified inference abstraction)
 # ├── planner.bash
 # ├── harness.bash (depends on: blackboard.bash, planner.bash)
 # ├── stitcher.bash (depends on: blackboard.bash, planner.bash)
@@ -139,7 +140,7 @@ create_task() {
 	# Save goal
 	echo "$goal" >"$bb_dir/g"
 
-	# Generate plan using planner module (respects PLAN_MODEL)
+	# Generate plan using planner module (uses infer backend)
 	local plan
 	local plan_result
 	plan="$(generate_plan "$goal")"
@@ -188,7 +189,7 @@ resume_task() {
 
 	# Find first subtask that is not yet final
 	local next_subtask=""
-	while IFS=' ' read -r subtask_id state retries; do
+	while IFS=' ' read -r subtask_id state _rest_retries; do
 		if [[ "$state" != "f" ]]; then
 			next_subtask="$subtask_id"
 			break

@@ -43,95 +43,81 @@ Add brief transitions between sections if needed. Fix any
 inconsistencies. Do not add new content. Output only the
 final document."
 
-# Default planner is apfel
-PLAN_MODEL="${PLAN_MODEL:-apfel}"
-
-# Generate plan from goal using apfel
+# Generate plan from goal using infer planner
 # Usage: generate_plan "<goal>"
 generate_plan() {
 	local goal="$1"
 
-	if [[ "$PLAN_MODEL" == "apfel" ]]; then
-		# Safety: ensure goal doesn't start with - (would be interpreted as apfel flag)
-		if [[ "$goal" == -* ]]; then
-			goal=$'\n'"$goal"
-		fi
+	# Call infer planner with SYS_PLAN
+	local exit_code=0
+	local raw_output
 
-		local exit_code=0
-		local raw_output
+	raw_output="$(infer planner "$SYS_PLAN" "$goal" 2>/dev/null)" || exit_code=$?
 
-		raw_output="$(apfel -q -s "$SYS_PLAN" "$goal" 2>/dev/null)" || exit_code=$?
-
-		# Handle apfel exit codes
-		if ((exit_code == 3)); then
-			echo "ERROR: apfel guardrail blocked the request" >&2
-			echo ""
-			return 3
-		elif ((exit_code == 4)); then
-			echo "ERROR: apfel context overflow" >&2
-			echo ""
-			return 4
-		elif ((exit_code != 0)); then
-			echo "ERROR: apfel failed with exit code $exit_code" >&2
-			echo ""
-			return 1
-		fi
-
-		local normalized
-		normalized="$(echo "$raw_output" | normalize_plan_output)"
-
-		# Check if we got enough valid lines
-		local line_count
-		line_count="$(echo "$normalized" | grep -c '.' || true)"
-
-		if ((line_count >= 3)); then
-			# Add missing word counts and return
-			local filled
-			filled="$(fill_missing_word_counts "$normalized")"
-			echo "$filled"
-			return 0
-		fi
-
-		# Pass 2: Two-pass fallback — ask apfel to restructure its own output
-		echo "WARNING: Initial plan normalization produced ${line_count} lines, attempting restructure" >&2
-
-		local restructure_exit_code=0
-		local restructured
-		restructured="$(apfel -q -s "$SYS_RESTRUCTURE" "$raw_output" 2>/dev/null)" || restructure_exit_code=$?
-
-		if ((restructure_exit_code == 3)); then
-			echo "ERROR: apfel guardrail blocked restructure" >&2
-			echo ""
-			return 3
-		elif ((restructure_exit_code == 4)); then
-			echo "ERROR: apfel context overflow during restructure" >&2
-			echo ""
-			return 4
-		elif ((restructure_exit_code != 0)); then
-			echo "ERROR: apfel failed restructure with exit code $restructure_exit_code" >&2
-			echo ""
-			return 1
-		fi
-
-		normalized="$(echo "$restructured" | normalize_plan_output)"
-
-		line_count="$(echo "$normalized" | grep -c '.' || true)"
-		if ((line_count >= 3)); then
-			local filled
-			filled="$(fill_missing_word_counts "$normalized")"
-			echo "$filled"
-			return 0
-		fi
-
-		echo "ERROR: Could not generate valid plan after two attempts" >&2
+	# Handle infer exit codes
+	if ((exit_code == 3)); then
+		echo "ERROR: guardrail blocked the request" >&2
 		echo ""
-		return 1
-	else
-		# Future extension point: external model support via PLAN_MODEL
-		echo "ERROR: PLAN_MODEL must be 'apfel' for now" >&2
+		return 3
+	elif ((exit_code == 4)); then
+		echo "ERROR: context overflow" >&2
+		echo ""
+		return 4
+	elif ((exit_code != 0)); then
+		echo "ERROR: inference failed with exit code $exit_code" >&2
 		echo ""
 		return 1
 	fi
+
+	local normalized
+	normalized="$(echo "$raw_output" | normalize_plan_output)"
+
+	# Check if we got enough valid lines
+	local line_count
+	line_count="$(echo "$normalized" | grep -c '.' || true)"
+
+	if ((line_count >= 3)); then
+		# Add missing word counts and return
+		local filled
+		filled="$(fill_missing_word_counts "$normalized")"
+		echo "$filled"
+		return 0
+	fi
+
+	# Pass 2: Two-pass fallback — ask infer planner to restructure its own output
+	echo "WARNING: Initial plan normalization produced ${line_count} lines, attempting restructure" >&2
+
+	local restructure_exit_code=0
+	local restructured
+	restructured="$(infer planner "$SYS_RESTRUCTURE" "$raw_output" 2>/dev/null)" || restructure_exit_code=$?
+
+	if ((restructure_exit_code == 3)); then
+		echo "ERROR: guardrail blocked restructure" >&2
+		echo ""
+		return 3
+	elif ((restructure_exit_code == 4)); then
+		echo "ERROR: context overflow during restructure" >&2
+		echo ""
+		return 4
+	elif ((restructure_exit_code != 0)); then
+		echo "ERROR: inference failed restructure with exit code $restructure_exit_code" >&2
+		echo ""
+		return 1
+	fi
+
+	normalized="$(echo "$restructured" | normalize_plan_output)"
+
+	line_count="$(echo "$normalized" | grep -c '.' || true)"
+	if ((line_count >= 3)); then
+		local filled
+		filled="$(fill_missing_word_counts "$normalized")"
+		echo "$filled"
+		return 0
+	fi
+
+	echo "ERROR: Could not generate valid plan after two attempts" >&2
+	echo ""
+	return 1
 }
 
 # Inject vipune search results into context
