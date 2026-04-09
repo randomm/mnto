@@ -333,14 +333,13 @@ mock_apfel_overflow() {
 	unset MNTO_MODEL
 }
 
-@test "_infer_openai returns error (stub not implemented)" {
-	export MNTO_MODEL="openai:http://localhost:11434/v1:gpt-4"
+@test "_infer_openai is available after sourcing openai.bash" {
+	# Source openai.bash to make _infer_openai available
+	source "${BATS_TEST_DIRNAME}/../lib/openai.bash"
 
-	run _infer_openai "openai:http://localhost:11434/v1:gpt-4" "system" "context"
-	assert_failure
-	assert_output --partial "ERROR: OpenAI backend not yet implemented"
-
-	unset MNTO_MODEL
+	# Verify function is available
+	run type _infer_openai
+	assert_success
 }
 
 # Test infer respects role-specific backends
@@ -424,13 +423,18 @@ mock_apfel_overflow() {
 	unset MNTO_MODEL
 }
 
-@test "infer accepts valid openai backend with URL and model" {
+@test "infer accepts valid openai backend spec format" {
+	# Test that valid openai spec passes validation
+	# Actual inference requires external dependencies (curl, jq, API endpoint)
 	export MNTO_MODEL="openai:http://localhost:11434/v1:qwen3"
 	unset MNTO_VERIFIER MNTO_PROPOSER
 
+	# The spec validation should pass, but inference will fail without real endpoint
+	# This tests that the OpenAI backend is properly wired (not stubbed)
 	run infer planner "system" "context"
+	# Should fail due to missing curl/jq/network, not "not yet implemented"
 	assert_failure
-	assert_output --partial "ERROR: OpenAI backend not yet implemented"
+	refute_output --partial "ERROR: OpenAI backend not yet implemented"
 
 	unset MNTO_MODEL
 }

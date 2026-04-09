@@ -153,21 +153,3 @@ _infer_apfel() {
 	fi
 	# Exit codes pass through naturally: 3=guardrail, 4=overflow
 }
-
-# Usage: _infer_openai <backend_spec> <system_prompt> <context> [output_file]
-# Stub: OpenAI backend (full implementation in issue #49)
-# backend_spec: backend specification string (e.g., "openai:gpt-4")
-# system_prompt: system prompt for the model
-# context: input context (user message)
-# output_file: optional file path to write output
-# Returns: 1 (not implemented)
-# shellcheck disable=SC2034 # backend_spec used in future implementation
-_infer_openai() {
-	local backend_spec="$1"
-	local system="$2"
-	local context="$3"
-	local outfile="${4:-}"
-
-	echo "ERROR: OpenAI backend not yet implemented" >&2
-	return 1
-}

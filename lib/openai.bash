@@ -2,7 +2,8 @@
 # OpenAI-compatible API backend adapter for mnto
 set -euo pipefail
 
-# shellcheck disable=SC2317
+# Idempotency guard — prevent double-sourcing
+[[ -n "${_OPENAI_SOURCED:-}" ]] && return 0
 declare -r _OPENAI_SOURCED=1
 
 # Parse OpenAI backend specification

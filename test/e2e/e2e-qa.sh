@@ -14,6 +14,7 @@ readonly RESULTS_DIR="$SCRIPT_DIR/results"
 
 # Backend configuration
 BACKEND=""
+BACKEND_EXPLICIT=false
 readonly DEFAULT_BACKEND="apfel"
 
 # Global metrics
@@ -192,11 +193,29 @@ collect_scenario_metrics() {
 	log_section "Running scenario: ${scenario_name}"
 	log "Goal: $(head -1 "${scenario_path}")"
 
-	# Set environment based on backend if not already set
-	# This ensures --backend actually influences mnto run
-	if [[ "$BACKEND" == "openai" ]] && [[ -z "${MNTO_MODEL:-}" ]]; then
-		export MNTO_MODEL="openai:http://localhost:11434/v1:gpt-4o-mini"
-	elif [[ "$BACKEND" == "apfel" ]] && [[ -z "${MNTO_MODEL:-}" ]]; then
+	# Set environment based on backend
+	# --backend takes precedence over existing MNTO_MODEL when explicitly set
+	if [[ "$BACKEND" == "openai" ]]; then
+		if [[ "$BACKEND_EXPLICIT" == true ]] && [[ -n "${MNTO_MODEL:-}" ]]; then
+			# Check if we're overriding a mismatched value
+			local old_model="${MNTO_MODEL}"
+			local old_backend
+			old_backend=$(extract_backend_prefix "$old_model")
+			if [[ "$old_backend" != "openai" ]]; then
+				log "WARNING: --backend openai overriding existing MNTO_MODEL=$old_model"
+			fi
+		fi
+		export MNTO_MODEL="${E2E_OPENAI_MODEL:-openai:http://localhost:11434/v1:llama3.2}"
+	elif [[ "$BACKEND" == "apfel" ]]; then
+		if [[ "$BACKEND_EXPLICIT" == true ]] && [[ -n "${MNTO_MODEL:-}" ]]; then
+			# Check if we're overriding a mismatched value
+			local old_model="${MNTO_MODEL}"
+			local old_backend
+			old_backend=$(extract_backend_prefix "$old_model")
+			if [[ "$old_backend" != "apfel" ]]; then
+				log "WARNING: --backend apfel overriding existing MNTO_MODEL=$old_model"
+			fi
+		fi
 		export MNTO_MODEL="apfel"
 	fi
 
@@ -363,6 +382,7 @@ main() {
 			;;
 		--backend)
 			BACKEND="$2"
+			BACKEND_EXPLICIT=true
 			shift 2
 			;;
 		--dry-run)
