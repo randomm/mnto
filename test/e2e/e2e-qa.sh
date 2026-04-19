@@ -117,13 +117,13 @@ detect_backend() {
 		local detected_backend
 		detected_backend=$(extract_backend_prefix "$verifier")
 		case "$detected_backend" in
-			apfel|openai)
-				BACKEND="$detected_backend"
-				;;
-			*)
-				echo "ERROR: Unsupported backend in MNTO_VERIFIER: $detected_backend (supported: apfel, openai)" >&2
-				exit 1
-				;;
+		apfel | openai)
+			BACKEND="$detected_backend"
+			;;
+		*)
+			echo "ERROR: Unsupported backend in MNTO_VERIFIER: $detected_backend (supported: apfel, openai)" >&2
+			exit 1
+			;;
 		esac
 		return 0
 	fi
@@ -135,13 +135,13 @@ detect_backend() {
 		local detected_backend
 		detected_backend=$(extract_backend_prefix "$model")
 		case "$detected_backend" in
-			apfel|openai)
-				BACKEND="$detected_backend"
-				;;
-			*)
-				echo "ERROR: Unsupported backend in MNTO_MODEL: $detected_backend (supported: apfel, openai)" >&2
-				exit 1
-				;;
+		apfel | openai)
+			BACKEND="$detected_backend"
+			;;
+		*)
+			echo "ERROR: Unsupported backend in MNTO_MODEL: $detected_backend (supported: apfel, openai)" >&2
+			exit 1
+			;;
 		esac
 		return 0
 	fi
@@ -269,7 +269,7 @@ collect_scenario_metrics() {
 			inference_calls=0
 		fi
 
-# Count retry occurrences, with error handling for unreadable directories
+		# Count retry occurrences, with error handling for unreadable directories
 		if [[ -r "$bb_dir/${task_id}" ]]; then
 			retry_count=$(grep -r "retry" "$bb_dir/${task_id}" 2>/dev/null | wc -l) || retry_count=0
 			# Normalize: strip whitespace
@@ -277,7 +277,8 @@ collect_scenario_metrics() {
 		else
 			log "WARNING: Blackboard directory not readable: $bb_dir/${task_id}"
 			retry_count=0
-fi
+		fi
+	fi
 
 	end_time=$(now_seconds)
 	duration=$(echo "${end_time} - ${start_time}" | bc || echo "0")
