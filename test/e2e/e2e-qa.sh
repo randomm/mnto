@@ -271,14 +271,13 @@ collect_scenario_metrics() {
 
 # Count retry occurrences, with error handling for unreadable directories
 		if [[ -r "$bb_dir/${task_id}" ]]; then
-			retry_count=$(grep -r "retry" "$bb_dir/${task_id}" 2>/dev/null | wc -l || echo 0)
+			retry_count=$(grep -r "retry" "$bb_dir/${task_id}" 2>/dev/null | wc -l) || retry_count=0
 			# Normalize: strip whitespace
 			retry_count=$(echo "$retry_count" | tr -d ' ')
 		else
 			log "WARNING: Blackboard directory not readable: $bb_dir/${task_id}"
 			retry_count=0
-		fi
-	fi
+fi
 
 	end_time=$(now_seconds)
 	duration=$(echo "${end_time} - ${start_time}" | bc || echo "0")
