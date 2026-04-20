@@ -101,6 +101,7 @@ _infer_openai() {
 
 	# Build request with jq (safe JSON encoding of prompts containing special chars)
 	local max_tokens="${MNTO_MAX_TOKENS:-4096}"
+	local temperature="${MNTO_TEMPERATURE:-0.7}"
 	local payload
 	payload="$(
 		jq -n \
@@ -108,7 +109,8 @@ _infer_openai() {
 			--arg sys "$system" \
 			--arg ctx "$context" \
 			--argjson max_tokens "$max_tokens" \
-			'{model:$model, max_tokens:$max_tokens, messages:[{role:"system",content:$sys},{role:"user",content:$ctx}]}'
+			--argjson temperature "$temperature" \
+			'{model:$model, max_tokens:$max_tokens, temperature:$temperature, messages:[{role:"system",content:$sys},{role:"user",content:$ctx}]}'
 	)" || return 1
 
 	# Send request with secure header file to avoid exposing API key in process list

@@ -459,7 +459,7 @@ mock_infer() {
 		local system="$2"
 		local context="$3"
 		local outfile="${4:-}"
-		if [[ "$system" == *"Combine the sections"* ]]; then
+		if [[ "$system" == *"Merge the sections"* ]] || [[ "$system" == *"Combine the sections"* ]]; then
 			# Stitch call — echo content
 			echo "$context"
 		elif [[ -n "$outfile" ]]; then
@@ -475,8 +475,9 @@ mock_infer() {
 	[ "$status" -eq 0 ]
 	[ -f "$BB_DIR/tst/out" ]
 
-	# Should contain unverified marker
+	# Should contain an unverified marker (exact variant depends on
+	# whether echo chamber detection or max retries triggered first)
 	local output
 	output="$(cat "$BB_DIR/tst/out")"
-	[[ "$output" == *"<!-- memento: unverified -->"* ]]
+	[[ "$output" == *"<!-- memento: unverified"* ]]
 }

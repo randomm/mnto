@@ -33,6 +33,15 @@ infer() {
 		return 1
 	fi
 
+	# Role-based temperature: low for structured output (planner/verifier),
+	# higher for creative content (proposer/stitcher).
+	local temperature
+	case "$role" in
+	planner | verifier) temperature="${MNTO_TEMP_STRUCTURED:-0.2}" ;;
+	proposer | stitcher) temperature="${MNTO_TEMP_CREATIVE:-0.7}" ;;
+	esac
+	export MNTO_TEMPERATURE="$temperature"
+
 	local backend
 	backend="$(_resolve_backend "$role")"
 
@@ -44,6 +53,7 @@ infer() {
 	case "$backend_type" in
 	apfel)
 		# apfel backend accepts both "apfel" and "apfel:spec"
+		# (apfel has no temperature control — env var is ignored)
 		_infer_apfel "$system" "$context" "$outfile"
 		;;
 	openai)

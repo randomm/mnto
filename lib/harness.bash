@@ -62,11 +62,15 @@ assemble_context() {
 	local plan_line
 	plan_line="$(read_plan_line "$tid" "$subtask_id")" || true
 
-	# Read previous subtask's final output (if exists)
+	# Read previous subtask's final output (if exists).
+	# Truncate to ~200 chars to prevent small models from copying it verbatim.
+	# Full context wastes tokens and causes section repetition.
 	local prev_output=""
 	prev_output="$(prev_final "$tid" "$subtask_id")"
 	if [[ "$prev_output" == "NULL" ]]; then
 		prev_output=""
+	elif [[ ${#prev_output} -gt 200 ]]; then
+		prev_output="${prev_output:0:200}..."
 	fi
 
 	# Read critique (if exists, for retry)
@@ -139,6 +143,18 @@ verify_subtask() {
 	local draft
 	draft="$(cat "$draft_file")"
 
+	# Quick bash pre-check: fail fast on empty or trivially bad drafts
+	# without wasting an LLM verification call.
+	local draft_len=${#draft}
+	if ((draft_len < 10)); then
+		echo "Draft too short (${draft_len} chars)" >"$critique_file"
+		local retries
+		retries="$(get_retries "$tid" "$subtask_id")"
+		set_status "$tid" "$subtask_id" "c" "$retries"
+		print_status "RETRY" "Subtask $subtask_id: draft too short"
+		return 1
+	fi
+
 	# Read plan line for this subtask (spec)
 	local spec
 	spec="$(read_plan_line "$tid" "$subtask_id")" || true
@@ -172,47 +188,66 @@ $spec"
 		fi
 	fi
 
-	# Parse result — strip markdown bold/backticks, then scan all lines
-	# for PASS or FAIL verdict. apfel often echoes context back and
-	# wraps the verdict in markdown (e.g. **PASS**, ```PASS```).
+	# Parse result with confidence scoring (RECONCILE-inspired).
+	# Expected format: "PASS 8" or "FAIL 3: reason" (verdict + confidence 1-10).
+	# Strip markdown, scan all lines for verdict.
 	local stripped
 	stripped="$(echo "$result" | sed 's/\*\*//g; s/`//g')"
-	local verdict
-	verdict="$(echo "$stripped" | grep -Eo '^(PASS|FAIL)' | head -1)" || true
+
+	# Extract verdict line: PASS [N] or FAIL [N]: reason
+	local verdict_line
+	verdict_line="$(echo "$stripped" | grep -E '^(PASS|FAIL)' | head -1)" || true
+
+	local verdict="" confidence=5
+	if [[ "$verdict_line" =~ ^(PASS|FAIL)[[:space:]]*([0-9]+)? ]]; then
+		verdict="${BASH_REMATCH[1]}"
+		[[ -n "${BASH_REMATCH[2]}" ]] && confidence="${BASH_REMATCH[2]}"
+	fi
+
 	if [[ -z "$verdict" ]]; then
-		reason="Verifier returned no PASS or FAIL verdict"
-		reason="${reason:-"Verification failed without reason"}"
-		echo "$reason" >"$critique_file"
-		# treat as FAIL — fall through to retry logic below
+		# No clear verdict — treat as low-confidence fail
+		echo "Verifier returned no PASS or FAIL verdict" >"$critique_file"
+		local retries
+		retries="$(get_retries "$tid" "$subtask_id")"
+		set_status "$tid" "$subtask_id" "c" "$retries"
+		print_status "RETRY" "Subtask $subtask_id: no verdict from verifier"
+		return 1
 	elif [[ "$verdict" == "PASS" ]]; then
 		# Promote draft to final
 		mv "$draft_file" "$final_file"
 		local retries
 		retries="$(get_retries "$tid" "$subtask_id")"
 		set_status "$tid" "$subtask_id" "f" "$retries"
-		print_status "PASS" "Subtask $subtask_id verified"
+		print_status "PASS" "Subtask $subtask_id verified (confidence: $confidence)"
 		return 0
 	else
-		# Extract reason from "FAIL: reason" line — search all lines
-		local reason=""
-		local fail_line
-		fail_line="$(echo "$stripped" | grep -E '^FAIL:' | head -1)" || true
-		if [[ -n "$fail_line" && "$fail_line" =~ ^FAIL:[[:space:]]*(.+)$ ]]; then
-			reason="${BASH_REMATCH[1]}"
-		else
-			reason="$result"
+		# FAIL verdict — check confidence. Low-confidence FAILs (< 4) are
+		# likely pedantic; accept draft as soft pass to avoid wasted retries.
+		if ((confidence < 4)); then
+			mv "$draft_file" "$final_file"
+			echo "" >>"$final_file"
+			echo "<!-- memento: soft-pass (low-confidence fail: $confidence) -->" >>"$final_file"
+			local retries
+			retries="$(get_retries "$tid" "$subtask_id")"
+			set_status "$tid" "$subtask_id" "f" "$retries"
+			print_status "PASS" "Subtask $subtask_id: low-confidence FAIL ($confidence), accepting"
+			return 0
 		fi
 
-		# Guard against empty or whitespace-only reason
-		if [[ -z "$reason" ]] || [[ "$reason" =~ ^[[:space:]]+$ ]]; then
-			reason="No reason provided"
+		# High-confidence FAIL — extract reason and retry
+		local reason=""
+		if [[ "$verdict_line" =~ FAIL[[:space:]]*[0-9]*:[[:space:]]*(.+)$ ]]; then
+			reason="${BASH_REMATCH[1]}"
+		else
+			reason="${verdict_line}"
 		fi
+		[[ -z "$reason" || "$reason" =~ ^[[:space:]]+$ ]] && reason="No reason provided"
 
 		echo "$reason" >"$critique_file"
 		local retries
 		retries="$(get_retries "$tid" "$subtask_id")"
 		set_status "$tid" "$subtask_id" "c" "$retries"
-		print_status "RETRY" "Subtask $subtask_id: $reason"
+		print_status "RETRY" "Subtask $subtask_id (confidence: $confidence): $reason"
 		return 1
 	fi
 }
@@ -373,12 +408,43 @@ process_subtask() {
 		return 1
 	fi
 
-	# Verify loop with retry
+	# Verify loop with echo chamber detection.
+	# Research (RECONCILE): same-model agents reinforce incorrect beliefs.
+	# If we see 2 consecutive similar critiques, accept the draft rather
+	# than burning more retries on the same echo chamber.
+	local prev_critique=""
 	while true; do
 		if verify_subtask "$tid" "$subtask_id"; then
 			# PASS - subtask complete
 			return 0
 		else
+			# Check for echo chamber: if current critique is similar to previous,
+			# the verifier is stuck in a loop. Accept and move on.
+			local bb_dir="$BB_DIR/$tid"
+			local critique_file="$bb_dir/$subtask_id/c"
+			if [[ -f "$critique_file" ]] && [[ -n "$prev_critique" ]]; then
+				local curr_critique
+				curr_critique="$(cat "$critique_file")"
+				# Simple similarity: first 80 chars match (same complaint repeated)
+				if [[ "${curr_critique:0:80}" == "${prev_critique:0:80}" ]]; then
+					print_status "INFO" "Subtask $subtask_id: echo chamber detected, accepting draft"
+					local draft_file="$bb_dir/$subtask_id/d"
+					local final_file="$bb_dir/$subtask_id/f"
+					if [[ -f "$draft_file" ]]; then
+						mv "$draft_file" "$final_file"
+						echo "" >>"$final_file"
+						echo "<!-- memento: unverified (echo chamber) -->" >>"$final_file"
+					fi
+					local retries
+					retries="$(get_retries "$tid" "$subtask_id")"
+					set_status "$tid" "$subtask_id" "f" "$retries"
+					return 0
+				fi
+				prev_critique="$curr_critique"
+			elif [[ -f "$critique_file" ]]; then
+				prev_critique="$(cat "$critique_file")"
+			fi
+
 			# FAIL - handle retry
 			if ! handle_retry "$tid" "$subtask_id" 3; then
 				# No retries left - accept unverified draft, still considered success
