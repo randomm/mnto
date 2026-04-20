@@ -44,6 +44,7 @@ OPTIONS:
 BACKEND SELECTION:
     --backend apfel        Use apfel CLI for inference
     --backend openai       Use OpenAI API for inference (requires OPENAI_API_KEY or MNTO_API_KEY)
+    --backend ollama      Use Ollama with OpenAI compat API (uses E2E_OLLAMA_MODEL env var)
 
     Backend precedence (from highest to lowest):
     1. --backend flag (explicit override, takes precedence)
@@ -53,11 +54,15 @@ BACKEND SELECTION:
 
     When --backend is provided, it overrides any existing MNTO_MODEL for this run.
 
+ENVIRONMENT VARIABLES:
+    E2E_OLLAMA_MODEL   Model name for ollama backend (default: gemma4:e4b)
+
 EXAMPLES:
     e2e-qa.sh                    # Run all scenarios with auto-detected backend
     e2e-qa.sh --scenario 01      # Run only scenario 01
     e2e-qa.sh --backend openai   # Run all scenarios with OpenAI backend
-    e2e-qa.sh --dry-run           # Preview scenarios to run
+    e2e-qa.sh --backend ollama   # Run all scenarios with Ollama backend
+    e2e-qa.sh --dry-run          # Preview scenarios to run
 
 EOF
 }
@@ -117,11 +122,11 @@ detect_backend() {
 		local detected_backend
 		detected_backend=$(extract_backend_prefix "$verifier")
 		case "$detected_backend" in
-		apfel | openai)
+		apfel | openai | ollama)
 			BACKEND="$detected_backend"
 			;;
 		*)
-			echo "ERROR: Unsupported backend in MNTO_VERIFIER: $detected_backend (supported: apfel, openai)" >&2
+			echo "ERROR: Unsupported backend in MNTO_VERIFIER: $detected_backend (supported: apfel, openai, ollama)" >&2
 			exit 1
 			;;
 		esac
@@ -135,11 +140,11 @@ detect_backend() {
 		local detected_backend
 		detected_backend=$(extract_backend_prefix "$model")
 		case "$detected_backend" in
-		apfel | openai)
+		apfel | openai | ollama)
 			BACKEND="$detected_backend"
 			;;
 		*)
-			echo "ERROR: Unsupported backend in MNTO_MODEL: $detected_backend (supported: apfel, openai)" >&2
+			echo "ERROR: Unsupported backend in MNTO_MODEL: $detected_backend (supported: apfel, openai, ollama)" >&2
 			exit 1
 			;;
 		esac
@@ -173,8 +178,14 @@ check_backend_dependencies() {
 			exit 1
 		fi
 		;;
+	ollama)
+		if ! command -v curl &>/dev/null; then
+			echo "ERROR: curl not found in PATH (required for ollama backend)"
+			exit 1
+		fi
+		;;
 	*)
-		echo "ERROR: Unknown backend: $BACKEND (supported: apfel, openai)"
+		echo "ERROR: Unknown backend: $BACKEND (supported: apfel, openai, ollama)"
 		exit 1
 		;;
 	esac
@@ -221,6 +232,11 @@ collect_scenario_metrics() {
 		if [[ "$BACKEND_EXPLICIT" == true ]] || [[ -z "${MNTO_MODEL:-}" ]]; then
 			_warn_on_backend_override "apfel"
 			export MNTO_MODEL="apfel"
+		fi
+	elif [[ "$BACKEND" == "ollama" ]]; then
+		if [[ "$BACKEND_EXPLICIT" == true ]] || [[ -z "${MNTO_MODEL:-}" ]]; then
+			_warn_on_backend_override "ollama"
+			export MNTO_MODEL="openai:http://localhost:11434/v1:${E2E_OLLAMA_MODEL:-gemma4:e4b}"
 		fi
 	fi
 

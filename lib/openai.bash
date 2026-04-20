@@ -18,15 +18,20 @@ _parse_openai_spec() {
 	# Strip "openai:" prefix
 	local url_and_model="${spec#openai:}"
 
-	# Extract base URL and model by splitting on last colon
-	# Base URL is everything before the last colon, model is everything after
-	# This handles: http://localhost:11434/v1:gpt-4 and model names with colons
-	local base_url="${url_and_model%:*}"
-	local model="${url_and_model##*:}"
+	# Parse URL and model using BASH_REMATCH regex
+	# Pattern: (scheme://host(/path)?)(:model)?
+	# Handles model names with colons like gemma4:e4b
+	local base_url model
+	if [[ "$url_and_model" =~ ^(https?://[^/]+(/[^:]*)?)(:(.+))?$ ]]; then
+		base_url="${BASH_REMATCH[1]}"
+		model="${BASH_REMATCH[4]:-}"
+	else
+		echo "ERROR: Invalid backend spec. Expected: openai:<url>:<model>" >&2
+		return 1
+	fi
 
-	# Validate that both segments are non-empty after stripping "openai:" prefix
-	if [[ -z "$base_url" || -z "$model" ]]; then
-		echo "ERROR: Could not parse backend spec: $1" >&2
+	if [[ -z "$model" ]]; then
+		echo "ERROR: No model specified in backend spec" >&2
 		return 1
 	fi
 

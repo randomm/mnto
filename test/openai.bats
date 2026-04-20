@@ -89,6 +89,14 @@ teardown() {
 	assert_equal "$model" "qwen3:30b-a3b:latest"
 }
 
+# Test _parse_openai_spec handles gemma4:e4b style model names (issue #58)
+@test "_parse_openai_spec parses gemma4:e4b model name" {
+	local spec="openai:http://localhost:11434/v1:gemma4:e4b"
+	_parse_openai_spec "$spec" | IFS=$'\t' read -r base_url model
+	assert_equal "$base_url" "http://localhost:11434/v1"
+	assert_equal "$model" "gemma4:e4b"
+}
+
 # Test _parse_openai_spec with HTTPS
 @test "_parse_openai_spec parses HTTPS URL" {
 	local spec="openai:https://api.openai.com/v1:gpt-4o-mini"
