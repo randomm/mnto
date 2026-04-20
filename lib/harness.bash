@@ -129,6 +129,7 @@ verify_subtask() {
 	local draft_file="$bb_dir/$subtask_id/d"
 	local critique_file="$bb_dir/$subtask_id/c"
 	local final_file="$bb_dir/$subtask_id/f"
+	local reason=""
 
 	if [[ ! -f "$draft_file" ]]; then
 		echo "ERROR: Draft file not found: $draft_file" >&2
@@ -180,6 +181,7 @@ $spec"
 	verdict="$(echo "$stripped" | grep -Eo '^(PASS|FAIL)' | head -1)" || true
 	if [[ -z "$verdict" ]]; then
 		reason="Verifier returned no PASS or FAIL verdict"
+		reason="${reason:-"Verification failed without reason"}"
 		echo "$reason" >"$critique_file"
 		# treat as FAIL — fall through to retry logic below
 	elif [[ "$verdict" == "PASS" ]]; then
