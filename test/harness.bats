@@ -130,9 +130,14 @@ mock_infer() {
 		echo "abc Introduction: An overview"
 	} >"$BB_DIR/tst/abc/ctx"
 
-	# Mock infer
+	# Mock infer — write to output file (4th arg) like the real implementation
 	infer() {
-		echo "Draft content for section"
+		local outfile="${4:-}"
+		if [[ -n "$outfile" ]]; then
+			echo "Draft content for section" >"$outfile"
+		else
+			echo "Draft content for section"
+		fi
 	}
 
 	draft_subtask "tst" "abc"
@@ -447,12 +452,21 @@ mock_infer() {
 	echo "Goal" >"$BB_DIR/tst/g"
 	echo "abc - 0" >"$BB_DIR/tst/s"
 
-	# Mock infer - echo last arg for SYS_STITCH, fail for others
+	# Mock infer — write to output file (4th arg) like the real implementation.
+	# For stitch: echo content. For draft: write draft file. For verify: return FAIL.
 	infer() {
-		if [[ "$*" == *"$SYS_STITCH"* ]]; then
-			# Last positional argument is the content
-			echo "${@: -1}"
+		local role="$1"
+		local system="$2"
+		local context="$3"
+		local outfile="${4:-}"
+		if [[ "$system" == *"Combine the sections"* ]]; then
+			# Stitch call — echo content
+			echo "$context"
+		elif [[ -n "$outfile" ]]; then
+			# Draft call — write to file
+			echo "Draft that always fails verification" >"$outfile"
 		else
+			# Verify call — always fail
 			echo "FAIL: Always fails"
 		fi
 	}

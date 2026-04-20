@@ -194,7 +194,7 @@ normalize_plan_output() {
 
 	# Pass 1: Extract lines with strict 3-char alphabetic ID format
 	local strict
-	strict="$(echo "$clean" | grep -E '^[a-z]{3}[[:space:]]+' || true)"
+	strict="$(echo "$clean" | grep -E '^[a-z]{3}[[:space:]]+[a-zA-Z][a-zA-Z[:space:]]*:' || true)"
 	if [[ -n "$strict" ]]; then
 		echo "$strict"
 		return 0
@@ -264,7 +264,7 @@ validate_plan_format() {
 		[[ -z "$line" ]] && continue
 		count=$((count + 1))
 		# Validate full format: "abc label: description, 100 words" (word count optional)
-		if [[ ! "$line" =~ ^[a-z]{3}[[:space:]]+[^:]+:.+$ ]]; then
+		if [[ ! "$line" =~ ^[a-z]{3}[[:space:]]+[^:]+:[[:space:]]*[^[:space:]].*$ ]]; then
 			echo "ERROR: Invalid plan format on line $count: $line" >&2
 			echo "  Expected: abc label: description[, NNN words] (3 lowercase chars for ID)" >&2
 			return 1

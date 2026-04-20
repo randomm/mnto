@@ -89,19 +89,22 @@ _infer_openai() {
 	api_key="${MNTO_API_KEY:-${OPENAI_API_KEY:-}}"
 
 	# Build request with jq (safe JSON encoding of prompts containing special chars)
+	local max_tokens="${MNTO_MAX_TOKENS:-4096}"
 	local payload
-	payload="$(jq -n \
-		--arg model "$model" \
-		--arg sys "$system" \
-		--arg ctx "$context" \
-		'{model:$model, messages:[{role:"system",content:$sys},{role:"user",content:$ctx}]}'
+	payload="$(
+		jq -n \
+			--arg model "$model" \
+			--arg sys "$system" \
+			--arg ctx "$context" \
+			--argjson max_tokens "$max_tokens" \
+			'{model:$model, max_tokens:$max_tokens, messages:[{role:"system",content:$sys},{role:"user",content:$ctx}]}'
 	)" || return 1
 
-# Send request with secure header file to avoid exposing API key in process list
- 	local header_file=""
- 	# shellcheck disable=SC2329  # invoked via trap
- 	_cleanup_header() { [[ -n "$header_file" ]] && rm -f "$header_file"; }
- 	trap '_cleanup_header' RETURN INT TERM HUP
+	# Send request with secure header file to avoid exposing API key in process list
+	local header_file=""
+	# shellcheck disable=SC2329  # invoked via trap
+	_cleanup_header() { [[ -n "${header_file:-}" ]] && rm -f "$header_file"; }
+	trap '_cleanup_header' RETURN INT TERM HUP
 
 	local curl_auth_args=()
 	if [[ -n "$api_key" ]]; then
@@ -120,19 +123,20 @@ _infer_openai() {
 			return 1
 		}
 		umask "$old_umask"
-		chmod 600 "$header_file"  # Defense-in-depth: ensure owner-only
-		printf 'header "Authorization: Bearer %s"\n' "$api_key" > "$header_file"
+		chmod 600 "$header_file" # Defense-in-depth: ensure owner-only
+		printf 'header "Authorization: Bearer %s"\n' "$api_key" >"$header_file"
 		curl_auth_args=(--config "$header_file")
 	fi
 
 	# Use unit separator (0x1F) for robust response parsing
 	# This character won't appear in valid JSON
-	response="$(curl -sS --max-time "$timeout" \
-		-w $'\x1f%{http_code}' \
-		"${base_url}/chat/completions" \
-		-H "Content-Type: application/json" \
-		"${curl_auth_args[@]}" \
-		-d "$payload"
+	response="$(
+		curl -sS --max-time "$timeout" \
+			-w $'\x1f%{http_code}' \
+			"${base_url}/chat/completions" \
+			-H "Content-Type: application/json" \
+			"${curl_auth_args[@]}" \
+			-d "$payload"
 	)" || return 1
 
 	# Extract HTTP status code and body using parameter expansion
@@ -142,42 +146,41 @@ _infer_openai() {
 
 	# Map HTTP errors to exit codes
 	case "$http_code" in
-		200) ;; # success, continue
-		400) return 4 ;; # often token limit
-		403|451) return 3 ;; # content filter
-		*)
-			echo "ERROR: OpenAI API returned HTTP $http_code" >&2
-			return 1
-			;;
+	200) ;;                # success, continue
+	400) return 4 ;;       # often token limit
+	403 | 451) return 3 ;; # content filter
+	*)
+		echo "ERROR: OpenAI API returned HTTP $http_code" >&2
+		return 1
+		;;
 	esac
 
-	# Extract content and error in single jq pass (performance optimization)
-	local parse_result
-	parse_result="$(echo "$body" | jq -r '
-		if (.choices[0].message.content // null) != null then
-			.content = (.choices[0].message.content)
-		elif (.error.message // null) != null then
-			.error = (.error.message)
-		else
-			.error = "Unknown API error"
-		end
-		| if .content then .content else .error end
-	')" || {
-		echo "ERROR: OpenAI API: Could not parse response" >&2
-		return 1
-	}
+	# Extract content from response. Thinking models (Qwen3.x) may put
+	# the answer in content and chain-of-thought in reasoning_content.
+	# reasoning_content can contain raw control chars that break jq,
+	# so we extract content first and only fall back if empty.
+	content="$(echo "$body" | jq -r '.choices[0].message.content // empty' 2>/dev/null)" || true
 
-	# Check if result is an error (no content field present in response)
-	if ! echo "$body" | jq -e '.choices[0].message.content' >/dev/null 2>&1; then
-		echo "ERROR: OpenAI API: $parse_result" >&2
+	if [[ -z "$content" ]]; then
+		# Fallback: try reasoning_content (sanitize control chars for jq)
+		content="$(echo "$body" | tr -d '\000-\010\013\014\016-\037' | jq -r '.choices[0].message.reasoning_content // empty' 2>/dev/null)" || true
+	fi
+
+	if [[ -z "$content" ]]; then
+		# Check for API error
+		local api_error
+		api_error="$(echo "$body" | jq -r '.error.message // empty' 2>/dev/null)" || true
+		if [[ -n "$api_error" ]]; then
+			echo "ERROR: OpenAI API: $api_error" >&2
+		else
+			echo "ERROR: OpenAI API: No content in response" >&2
+		fi
 		return 1
 	fi
 
-	content="$parse_result"
-
 	# Output
 	if [[ -n "$outfile" ]]; then
-		echo "$content" > "$outfile"
+		echo "$content" >"$outfile"
 	else
 		echo "$content"
 	fi

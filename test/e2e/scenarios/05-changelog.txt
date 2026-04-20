@@ -1,0 +1,15 @@
+Write a user-facing changelog summary from these raw git commit messages. Group by theme (fixes, features, improvements). Write in past tense, user-friendly language. Do not invent features not listed here.
+
+Commits:
+- fix: normalize_plan_output now accepts commas in descriptions
+- fix: replace double-grep with BASH_REMATCH for reliable ID extraction
+- fix: ((var++)) causes silent failure under set -e, use var=$((var+1))
+- feat: add --proposer and --verifier CLI flags for model selection
+- feat: add vipune semantic search integration for context enrichment
+- fix: e2e metrics pipeline crashes under pipefail due to double stdout
+- feat: support OpenAI-compatible backends via openai:URL:MODEL spec
+- fix: gen_id charset aligned to [a-z]{3} to match validate_id
+- chore: clarify no-CI local verification policy in CONTRIBUTING.md
+- feat: add --clean and --prune commands for task lifecycle management
+- fix: stitch_task concatenates directly when output exceeds 3000 chars
+- feat: dry-run mode shows planned actions without executing
