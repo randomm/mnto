@@ -299,10 +299,10 @@ ghi Conclusion: Summary, 50 words"
 	source "$MNTO/lib/blackboard.bash"
 	local result
 	result=$(printf 'id1 introduction: Welcome to the guide\nid2 setup: How to get started\nid3 usage: How to use it\n' | normalize_plan_output)
-	# Should assign proper 3-char IDs (abc, def, ghi)
-	[[ "$result" == *"abc introduction"* ]]
-	[[ "$result" == *"def setup"* ]]
-	[[ "$result" == *"ghi usage"* ]]
+	# Should assign proper 3-char IDs (zab, zcd, zef)
+	[[ "$result" == *"zab introduction"* ]]
+	[[ "$result" == *"zcd setup"* ]]
+	[[ "$result" == *"zef usage"* ]]
 }
 
 @test "normalize_plan_output extracts markdown headers" {
@@ -310,9 +310,9 @@ ghi Conclusion: Summary, 50 words"
 	local result
 	result=$(printf '## Introduction\n## Installation\n## Usage\n' | normalize_plan_output)
 	# Should convert headers to plan lines with IDs
-	[[ "$result" == *"abc Introduction"* ]]
-	[[ "$result" == *"def Installation"* ]]
-	[[ "$result" == *"ghi Usage"* ]]
+	[[ "$result" == *"zab Introduction"* ]]
+	[[ "$result" == *"zcd Installation"* ]]
+	[[ "$result" == *"zef Usage"* ]]
 }
 
 @test "normalize_plan_output handles colon without word count" {
@@ -403,10 +403,74 @@ if ((infer_call_count == 1)); then
 	local result
 	result="$(generate_plan "Write a guide" 2>/dev/null || true)"
 
-	# Should have used two-pass and returned valid plan
-	[[ "$result" == *"abc Introduction"* ]]
-	[[ "$result" == *"def Installation"* ]]
-	[[ "$result" == *"ghi Usage"* ]]
+	# Markdown headers get converted to plan lines via normalizer Pass 3
+	# with the new zab/zcd/zef ID sequence
+	[[ "$result" == *"zab Introduction"* ]]
+	[[ "$result" == *"zcd Installation"* ]]
+	[[ "$result" == *"zef Usage"* ]]
+}
+
+@test "generate_plan falls back to fixed template when all passes fail" {
+	source "$MNTO/lib/blackboard.bash"
+	source "$MNTO/lib/backend.bash"
+	source "$MNTO/lib/planner.bash"
+
+	# Mock infer: always return garbage — tests the fixed template fallback
+	infer() {
+		echo "Here is my plan for the project."
+		echo "First we should do research."
+		return 0
+	}
+
+	# Use 1 sample to speed up test
+	MNTO_PLAN_SAMPLES=1
+
+	local result
+	result="$(generate_plan "Build a new feature" 2>/dev/null || true)"
+
+	# Should have fallen through to fixed template
+	[[ "$result" == *"zab introduction"* ]]
+	[[ "$result" == *"zcd body"* ]]
+	[[ "$result" == *"zef conclusion"* ]]
+}
+
+@test "generate_plan multi-sample succeeds on second attempt" {
+	source "$MNTO/lib/blackboard.bash"
+	source "$MNTO/lib/backend.bash"
+	source "$MNTO/lib/planner.bash"
+
+	# File-based counter since infer runs in $() subshells
+	local counter_file
+	counter_file="$(mktemp)"
+	echo "0" >"$counter_file"
+
+	infer() {
+		local count
+		count="$(cat "$counter_file")"
+		count=$((count + 1))
+		echo "$count" >"$counter_file"
+
+		if ((count == 1)); then
+			# First sample: garbage
+			echo "Here is my plan for the project."
+		else
+			# Second sample: valid format
+			echo "abc research: Gather requirements, 100 words"
+			echo "def design: Create architecture, 150 words"
+			echo "ghi implement: Build features, 200 words"
+		fi
+		return 0
+	}
+
+	local result
+	result="$(generate_plan "Build a new feature" 2>/dev/null || true)"
+
+	rm -f "$counter_file"
+
+	# Should have succeeded on second sample
+	[[ "$result" == *"abc research"* ]]
+	[[ "$result" == *"def design"* ]]
+	[[ "$result" == *"ghi implement"* ]]
 }
 
 @test "validate_plan_format rejects duplicate subtask IDs" {

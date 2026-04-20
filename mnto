@@ -49,6 +49,7 @@ source "$SCRIPT_DIR/lib/maintenance.bash"
 source "$SCRIPT_DIR/lib/planner.bash"
 source "$SCRIPT_DIR/lib/harness.bash"
 source "$SCRIPT_DIR/lib/stitcher.bash"
+source "$SCRIPT_DIR/lib/direct.bash"
 
 # Global options
 declare -a REMAINING_ARGS
@@ -144,6 +145,19 @@ create_task() {
 
 	# Save goal
 	echo "$goal" >"$bb_dir/g"
+
+	# Smart routing: short/simple goals bypass the harness entirely.
+	# Research shows single-agent systems outperform multi-agent on
+	# sequential reasoning with matched token budgets.
+	if is_direct_task "$goal"; then
+		if run_direct "$tid"; then
+			echo "Created task: $tid"
+			return 0
+		else
+			echo "ERROR: Direct mode failed, falling back to harness" >&2
+			# Fall through to harness
+		fi
+	fi
 
 	# Generate plan using planner module (uses infer backend)
 	local plan

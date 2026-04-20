@@ -193,18 +193,21 @@ mock_apfel() {
 	infer() {
 		local role="$1"
 		local sys_prompt="$2"
-		# If this is a restructuring call (second pass), return structured format
-		if [[ "$sys_prompt" == *"Restructure"* ]] || [[ "$sys_prompt" == *"restructure"* ]]; then
+		# Match fallback passes by prompt content (pass 2: "Rewrite", pass 3: "like this")
+		if [[ "$sys_prompt" == *"Rewrite"* ]] || [[ "$sys_prompt" == *"like this"* ]]; then
 			echo "abc Plan: Test plan, 100 words"
 			echo "def Detail: More details, 150 words"
 			echo "ghi End: Final section, 50 words"
 		else
-			# First call - return plain text without markdown symbols to avoid normalization
+			# First call - return plain text that won't normalize
 			echo "This is a test plan"
 			echo "More details here"
 			echo "Final section"
 		fi
 	}
+
+	# Use 1 sample to speed up test (fewer retries before hitting restructure)
+	MNTO_PLAN_SAMPLES=1
 
 	local result
 	result="$(generate_plan "Test goal")"

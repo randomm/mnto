@@ -28,6 +28,13 @@ validate_id() {
 	return 0
 }
 
+# Validate blackboard path before destructive operations (security)
+_validate_bb_path() {
+	local path="$1"
+	# Must be a subdirectory of BB_DIR and match expected pattern
+	[[ "$path" == "$BB_DIR/"* ]] && [[ -d "$path" ]]
+}
+
 # Generate 3-char lowercase alphabetic ID with collision detection
 gen_id() {
 	local chars="abcdefghijklmnopqrstuvwxyz"
@@ -207,7 +214,7 @@ normalize_plan_output() {
 	if [[ -n "$relaxed" ]]; then
 		# Assign sequential 3-char IDs to each line
 		local result=""
-		local ids=("abc" "def" "ghi" "jkl" "mno" "pqr" "stu" "vwx")
+		local ids=("zab" "zcd" "zef" "zij" "zkl" "zmn" "zop" "zqr")
 		local counter=0
 		while IFS= read -r line; do
 			# Strip leading id1/id2/etc prefixes using bash substitution
@@ -231,7 +238,7 @@ normalize_plan_output() {
 	headers="$(echo "$input" | grep -E '^##[[:space:]]+[^#]' | sed 's/^##[[:space:]]*//' || true)"
 	if [[ -n "$headers" ]]; then
 		local result=""
-		local ids=("abc" "def" "ghi" "jkl" "mno" "pqr" "stu" "vwx")
+		local ids=("zab" "zcd" "zef" "zij" "zkl" "zmn" "zop" "zqr")
 		local counter=0
 		while IFS= read -r title; do
 			local id="${ids[$((counter % ${#ids[@]}))]}"
