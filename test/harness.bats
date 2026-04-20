@@ -350,7 +350,7 @@ mock_infer() {
 	output="$(cat "$BB_DIR/tst/out")"
 }
 
-@test "stitch_task uses infer when under 3000 chars" {
+@test "stitch_task uses infer when under 10000 chars" {
 	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
@@ -369,14 +369,14 @@ mock_infer() {
 	[[ "$output" == *"Combined by infer"* ]]
 }
 
-@test "stitch_task concatenates directly when over 3000 chars" {
+@test "stitch_task concatenates directly when over 10000 chars" {
 	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
 	echo "abc Long: Detailed section" >"$BB_DIR/tst/p"
-	# Create content > 3000 chars
+	# Create content > 10000 chars
 	local large_content
-	printf -v large_content 'A%.0s' {1..4000}
+	large_content="$(head -c 11000 /dev/zero | tr '\0' 'A')"
 	echo "$large_content" >"$BB_DIR/tst/abc/f"
 
 	infer() {

@@ -72,7 +72,7 @@ stitch_task() {
 		return 0
 	fi
 
-	if ((total_len < 3000)); then
+	if ((total_len < 10000)); then
 		# Use infer to combine
 		local buffer
 		buffer="$(cat "$tmp_out")"
