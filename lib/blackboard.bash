@@ -260,22 +260,26 @@ validate_plan_format() {
 	# generate_plan() handles normalization before this function is called.
 
 	local count=0
-	while IFS= read -r line; do
-		[[ -z "$line" ]] && continue
+	declare -A seen_ids
+	while IFS=' ' read -r id rest; do
+		[[ -z "$id" ]] && continue
 		count=$((count + 1))
-		# Validate full format: "abc label: description, 100 words" (word count optional)
+		local line="$id $rest"
 		if [[ ! "$line" =~ ^[a-z]{3}[[:space:]]+[^:]+:[[:space:]]*[^[:space:]].*$ ]]; then
 			echo "ERROR: Invalid plan format on line $count: $line" >&2
 			echo "  Expected: abc label: description[, NNN words] (3 lowercase chars for ID)" >&2
 			return 1
 		fi
+		if [[ "${seen_ids[$id]:-}" == "1" ]]; then
+			echo "ERROR: Duplicate subtask ID '$id' on line $count" >&2
+			return 1
+		fi
+		seen_ids[$id]=1
 	done <<<"$plan"
-
 	if ((count < 3)); then
 		echo "ERROR: Plan needs at least 3 sections, got $count" >&2
 		return 1
 	fi
-
 	return 0
 }
 
