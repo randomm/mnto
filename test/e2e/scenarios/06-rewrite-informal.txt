@@ -1,0 +1,12 @@
+Rewrite the following internal Slack thread into a polished status update suitable for a project stakeholder email. Keep all facts, dates, and names. Remove informal language, emojis, and tangents. Use professional tone.
+
+Thread:
+@alice: hey team, quick update on the migration. we got the staging env up yesterday (Apr 14) and ran the first batch of integration tests. 73 out of 80 passed which is honestly pretty good for a first run lol
+@bob: nice! the 7 failures - are those the timezone ones we talked about?
+@alice: yeah exactly, 5 of the 7 are the TZ offset bug in the billing module. the other 2 are flaky network timeouts, not real failures
+@charlie: I can pick up the TZ fix tomorrow. should be straightforward - just need to normalize to UTC before comparison
+@alice: perfect. @dave is handling the network timeout issue by adding retry logic to the API client. ETA for both fixes is end of week (Apr 18)
+@bob: so we're still on track for the Apr 25 production cutover?
+@alice: yep, assuming no surprises in the second test run. we'll do that Monday Apr 21 after the fixes land
+@charlie: btw the old system will stay in read-only mode for 2 weeks after cutover as a safety net, per the rollback plan we agreed on
+@alice: right, forgot to mention that. good call charlie

@@ -1,0 +1,15 @@
+Transform these detailed meeting notes into a structured document with: Attendees, Key Decisions, Action Items (with owners and deadlines), and Open Questions. Preserve all specifics.
+
+Meeting: Q3 Platform Roadmap Review
+Date: April 15, 2026
+Present: Lisa (Engineering Lead), Tom (Product), Priya (Infrastructure), Marcus (QA)
+
+Lisa opened by reviewing Q2 delivery: 14 of 17 planned items shipped. The 3 deferred items were the GraphQL migration, the admin dashboard redesign, and the automated canary deployment pipeline. Tom noted that the GraphQL migration was deferred because the mobile team could not commit to client-side changes until their v5.0 release ships in May.
+
+For Q3 priorities, Tom presented three themes: (1) developer experience improvements, (2) observability overhaul, and (3) self-serve onboarding for enterprise customers. Lisa raised concern about team capacity: after two departures in March, the platform team is down to 6 engineers. She proposed deferring the enterprise onboarding to Q4 unless headcount is backfilled by June 1.
+
+Priya presented the observability proposal: replace Datadog with a Grafana+Prometheus stack to reduce costs from $18k/month to approximately $4k/month. Migration would take 6-8 weeks. Marcus asked about alert parity - Priya confirmed that 90% of existing alerts can be recreated but the remaining 10% (mostly APM trace-based alerts) need custom instrumentation. Decision: proceed with observability migration, but maintain Datadog in parallel for 30 days post-migration as safety net.
+
+Marcus raised testing gaps: current E2E suite covers 62% of critical paths. He proposed adding contract tests for all inter-service APIs by end of Q3. Lisa approved, assigning Marcus 2 dedicated sprint cycles for this work starting in May.
+
+Open question: should the deferred GraphQL migration be picked back up in Q3 or wait for Q4? Tom will check with the mobile team lead by April 22 and report back.

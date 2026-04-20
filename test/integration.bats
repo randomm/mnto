@@ -289,10 +289,10 @@ ghi Conclusion: Summary, 50 words"
 @test "normalize_plan_output handles mixed input" {
 	source "$MNTO/lib/blackboard.bash"
 	local result
-	result=$(printf '1. abc Task 1\n- def Task 2\nghi Task 3\n' | normalize_plan_output)
-	[[ "$result" == *"abc Task 1"* ]]
-	[[ "$result" == *"def Task 2"* ]]
-	[[ "$result" == *"ghi Task 3"* ]]
+	result=$(printf '1. abc intro: Task one overview\n- def setup: Task two details\nghi usage: Task three guide\n' | normalize_plan_output)
+	[[ "$result" == *"abc intro: Task one overview"* ]]
+	[[ "$result" == *"def setup: Task two details"* ]]
+	[[ "$result" == *"ghi usage: Task three guide"* ]]
 }
 
 @test "normalize_plan_output handles id1-style IDs" {

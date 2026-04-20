@@ -129,6 +129,7 @@ verify_subtask() {
 	local draft_file="$bb_dir/$subtask_id/d"
 	local critique_file="$bb_dir/$subtask_id/c"
 	local final_file="$bb_dir/$subtask_id/f"
+	local reason=""
 
 	if [[ ! -f "$draft_file" ]]; then
 		echo "ERROR: Draft file not found: $draft_file" >&2
@@ -156,23 +157,34 @@ $spec"
 
 	# Call infer verifier with SYS_VERIFY
 	local result
-	local exit_code=0
-	if ! result="$(infer verifier "$SYS_VERIFY" "$vctx" 2>/dev/null)"; then
-		exit_code=$?
-		if ((exit_code == 3)); then
+	local verify_exit=0
+	result="$(infer verifier "$SYS_VERIFY" "$vctx" 2>/dev/null)" || verify_exit=$?
+	if ((verify_exit != 0)); then
+		if ((verify_exit == 3)); then
 			echo "ERROR: guardrail blocked verification for subtask $subtask_id" >&2
 			return 1
-		elif ((exit_code == 4)); then
+		elif ((verify_exit == 4)); then
 			echo "ERROR: context overflow during verification for subtask $subtask_id" >&2
 			return 1
 		else
-			echo "ERROR: inference failed for subtask $subtask_id (exit code $exit_code)" >&2
+			echo "ERROR: inference failed for subtask $subtask_id (exit code $verify_exit)" >&2
 			return 1
 		fi
 	fi
 
-	# Parse result
-	if [[ "$result" == PASS* ]]; then
+	# Parse result — strip markdown bold/backticks, then scan all lines
+	# for PASS or FAIL verdict. apfel often echoes context back and
+	# wraps the verdict in markdown (e.g. **PASS**, ```PASS```).
+	local stripped
+	stripped="$(echo "$result" | sed 's/\*\*//g; s/`//g')"
+	local verdict
+	verdict="$(echo "$stripped" | grep -Eo '^(PASS|FAIL)' | head -1)" || true
+	if [[ -z "$verdict" ]]; then
+		reason="Verifier returned no PASS or FAIL verdict"
+		reason="${reason:-"Verification failed without reason"}"
+		echo "$reason" >"$critique_file"
+		# treat as FAIL — fall through to retry logic below
+	elif [[ "$verdict" == "PASS" ]]; then
 		# Promote draft to final
 		mv "$draft_file" "$final_file"
 		local retries
@@ -181,9 +193,11 @@ $spec"
 		print_status "PASS" "Subtask $subtask_id verified"
 		return 0
 	else
-		# Extract reason from "FAIL: reason" - more robust parsing
+		# Extract reason from "FAIL: reason" line — search all lines
 		local reason=""
-		if [[ "$result" =~ ^FAIL:[[:space:]]*(.+)$ ]]; then
+		local fail_line
+		fail_line="$(echo "$stripped" | grep -E '^FAIL:' | head -1)" || true
+		if [[ -n "$fail_line" && "$fail_line" =~ ^FAIL:[[:space:]]*(.+)$ ]]; then
 			reason="${BASH_REMATCH[1]}"
 		else
 			reason="$result"
@@ -312,16 +326,17 @@ draft_subtask() {
 	fi
 
 	# Call infer proposer with SYS_DRAFT system prompt
-	if ! infer proposer "$SYS_DRAFT" "$ctx" "$draft_file" 2>/dev/null; then
-		local exit_code=$?
-		if ((exit_code == 3)); then
+	local draft_exit=0
+	infer proposer "$SYS_DRAFT" "$ctx" "$draft_file" 2>/dev/null || draft_exit=$?
+	if ((draft_exit != 0)); then
+		if ((draft_exit == 3)); then
 			echo "ERROR: guardrail blocked drafting for subtask $subtask_id" >&2
 			return 1
-		elif ((exit_code == 4)); then
+		elif ((draft_exit == 4)); then
 			echo "ERROR: context overflow during drafting for subtask $subtask_id" >&2
 			return 1
 		else
-			echo "ERROR: inference failed for subtask $subtask_id (exit code $exit_code)" >&2
+			echo "ERROR: inference failed for subtask $subtask_id (exit code $draft_exit)" >&2
 			return 1
 		fi
 	fi
@@ -400,7 +415,9 @@ run_harness() {
 	print_status "INFO" "Starting harness for task $tid"
 
 	# Process each subtask in order
-	while IFS=' ' read -r subtask_id rest; do
+	# NOTE: Read plan via fd 9 so child processes (apfel) don't consume
+	# the plan file through inherited stdin.
+	while IFS=' ' read -r subtask_id rest <&9; do
 		if [[ -z "$subtask_id" ]]; then
 			continue
 		fi
@@ -411,7 +428,7 @@ run_harness() {
 			echo "ERROR: Failed to process subtask $subtask_id" >&2
 			return 1
 		fi
-	done <"$plan_file"
+	done 9<"$plan_file"
 
 	# Stitch all final drafts
 	if ! stitch_task "$tid"; then

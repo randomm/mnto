@@ -1,0 +1,15 @@
+Write a structured incident report from this raw timeline. Use sections: Summary, Timeline, Root Cause, Impact, Resolution, Follow-up Actions. Be factual and concise.
+
+Raw timeline:
+14:02 - Monitoring alert: API error rate spike to 15% (normal baseline: 0.3%)
+14:05 - On-call engineer Sarah acknowledged alert, began investigation
+14:08 - Sarah identified errors coming from payment-service pod payment-svc-7b4d (HTTP 503)
+14:12 - Checked pod logs: OOM kill events, container restarting in crash loop
+14:15 - Correlated with deploy at 13:45 - new version payment-svc:v2.8.1 rolled out
+14:18 - Diff review of v2.8.1: new batch reconciliation job loads full transaction history into memory instead of streaming
+14:22 - Decision: rollback to payment-svc:v2.8.0
+14:24 - Rollback initiated via kubectl rollout undo
+14:27 - New pods healthy, error rate dropping
+14:32 - Error rate back to baseline 0.3%
+14:35 - All-clear posted to #incidents channel
+Duration: 30 minutes. Affected customers: approximately 340 payment attempts failed or timed out during the window.
