@@ -37,12 +37,6 @@ Output FAIL: {one-line reason} if not. Be strict but fair.
 Only fail for: missing required content, exceeding word limit
 by >50%, incoherent text. Do not fail for style preferences."
 
-# shellcheck disable=SC2034
-readonly SYS_STITCH="Merge the sections below into a single coherent document. \
-Remove all duplicate and redundant content — keep each section's unique key \
-points only. Add brief transitions where needed. Do not add new content. \
-Output only the merged document."
-
 # Generate plan from goal using infer planner
 # Usage: generate_plan "<goal>"
 generate_plan() {

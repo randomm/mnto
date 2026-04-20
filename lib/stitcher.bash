@@ -12,6 +12,12 @@ fi
 # shellcheck disable=SC2317
 declare -r _STITCHER_SOURCED=1
 
+# System prompt for stitching sections together
+readonly SYS_STITCH="Merge the sections below into a single coherent document. \
+Remove all duplicate and redundant content — keep each section's unique key \
+points only. Add brief transitions where needed. Do not add new content. \
+Output only the merged document."
+
 # Stitch all final drafts into final output
 # Usage: stitch_task <tid>
 # Reads: .mnto/bb/{tid}/p (plan), .mnto/bb/{tid}/{subtask_id}/f (final drafts)
@@ -72,7 +78,7 @@ stitch_task() {
 		return 0
 	fi
 
-	if ((total_len < 10000)); then
+	if ((total_len < ${STITCH_THRESHOLD:-10000})); then
 		# Use infer to combine
 		local buffer
 		buffer="$(cat "$tmp_out")"
