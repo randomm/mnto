@@ -408,3 +408,26 @@ if ((infer_call_count == 1)); then
 	[[ "$result" == *"def Installation"* ]]
 	[[ "$result" == *"ghi Usage"* ]]
 }
+
+@test "validate_plan_format rejects duplicate subtask IDs" {
+	source "$MNTO/lib/blackboard.bash"
+	local plan
+	plan="abc First task: Overview, 100 words
+abc Second task: Different description, 150 words
+ghi Third task: Final section, 200 words"
+	# Should fail with non-zero exit due to duplicate "abc"
+	run validate_plan_format "$plan"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"Duplicate subtask ID 'abc'"* ]]
+}
+
+@test "validate_plan_format accepts plan with unique IDs" {
+	source "$MNTO/lib/blackboard.bash"
+	local plan
+	plan="abc First task: Overview, 100 words
+def Second task: Different description, 150 words
+ghi Third task: Final section, 200 words"
+	# Should succeed with zero exit
+	run validate_plan_format "$plan"
+	[ "$status" -eq 0 ]
+}
