@@ -431,3 +431,29 @@ ghi Third task: Final section, 200 words"
 	run validate_plan_format "$plan"
 	[ "$status" -eq 0 ]
 }
+
+# === Model name validation tests (issue #69) ===
+
+@test "_parse_openai_spec accepts gemma4:e4b model name" {
+	source "$MNTO/lib/openai.bash"
+	local spec="openai:http://localhost:11434/v1:gemma4:e4b"
+	run _parse_openai_spec "$spec"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"gemma4:e4b" ]]
+}
+
+@test "_parse_openai_spec rejects model with dollar sign" {
+	source "$MNTO/lib/openai.bash"
+	local spec="openai:http://localhost:11434/v1:model\$evil"
+	run _parse_openai_spec "$spec"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"Invalid model name format"* ]]
+}
+
+@test "_parse_openai_spec rejects model with spaces" {
+	source "$MNTO/lib/openai.bash"
+	local spec="openai:http://localhost:11434/v1:model name"
+	run _parse_openai_spec "$spec"
+	[ "$status" -ne 0 ]
+	[[ "$output" == *"Invalid model name format"* ]]
+}

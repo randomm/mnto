@@ -35,6 +35,12 @@ _parse_openai_spec() {
 		return 1
 	fi
 
+	# Validate model name contains only safe characters (whitelist approach)
+	if [[ ! "$model" =~ ^[-a-zA-Z0-9._:/]+$ ]]; then
+		echo "ERROR: Invalid model name format: $model (allowed: alphanumeric, hyphens, dots, colons, underscores, forward-slashes)" >&2
+		return 1
+	fi
+
 	# Validate URL scheme to prevent SSRF
 	if [[ ! "$base_url" =~ ^https?:// ]]; then
 		echo "ERROR: Invalid URL scheme in backend spec" >&2
