@@ -151,6 +151,12 @@ create_task() {
 	plan="$(generate_plan "$goal")"
 	plan_result=$?
 
+	# Validate bb_dir before any cleanup (guards both error paths below)
+	if ! _validate_bb_path "$bb_dir"; then
+		echo "ERROR: Refusing to remove invalid path: $bb_dir" >&2
+		exit 1
+	fi
+
 	if [[ $plan_result -ne 0 ]]; then
 		# Exit code from generate_plan contains the error reason
 		rm -rf "$bb_dir"
