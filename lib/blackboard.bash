@@ -485,3 +485,38 @@ get_task_deps() {
 	echo ""
 	return 0
 }
+
+# Get subtask IDs that are ready to execute:
+# - state is waiting ("-")
+# - all declared deps are in final state ("f")
+# Usage: get_ready_tasks <tid>
+# Returns: space-separated subtask IDs ready for execution
+get_ready_tasks() {
+	local tid="$1"
+	local status_file="$BB_DIR/$tid/s"
+	[[ ! -f "$status_file" ]] && return 0
+
+	local ready=()
+	while IFS=' ' read -r id state _retries deps; do
+		[[ "$state" != "-" ]] && continue
+
+		# Check all deps are final
+		local all_deps_done=true
+		if [[ -n "$deps" ]]; then
+			for dep in $(echo "$deps" | tr ',' ' '); do
+				local dep_state
+				dep_state="$(awk -v d="$dep" '$1==d{print $2}' "$status_file")"
+				if [[ "$dep_state" != "f" ]]; then
+					all_deps_done=false
+					break
+				fi
+			done
+		fi
+
+		if [[ "$all_deps_done" == "true" ]]; then
+			ready+=("$id")
+		fi
+	done <"$status_file"
+
+	echo "${ready[@]:-}"
+}
