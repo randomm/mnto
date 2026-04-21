@@ -9,34 +9,36 @@ declare -r _PLANNER_SOURCED=1
 # System prompts — tuned for small LLMs (1.2B-3B params).
 # Uses positive framing, explicit ID sequence, and 5 diverse examples
 # to maximize format compliance via pattern completion.
-readonly SYS_PLAN="Write a plan. Each line: three-letter ID, space, label, colon, description, comma, word count.
+readonly SYS_PLAN="Write a plan. Each line: three-letter ID, space, label, colon, description, comma, word count, comma, deps.
 
 Use these IDs in order: zab, zcd, zef, zij, zkl, zmn, zop, zqr
 
 Example output for \"build a treehouse\":
-zab planning: Choose a tree and gather materials, 100 words
-zcd foundation: Build the base platform securely, 150 words
-zef walls: Construct walls and add windows, 150 words
-zij roof: Add weatherproof roofing, 100 words
-zkl finishing: Paint and add a rope ladder, 100 words
+zab planning: Choose a tree and gather materials, 100 words, deps:
+zcd foundation: Build the base platform securely, 150 words, deps: zab
+zef walls: Construct walls and add windows, 150 words, deps: zcd
+zij roof: Add weatherproof roofing, 100 words, deps: zef
+zkl finishing: Paint and add a rope ladder, 100 words, deps: zij
 
 Write 3 to 8 lines. Only plan lines, nothing else."
 
 # Two-pass fallback: reformat raw output into plan lines
-readonly SYS_RESTRUCTURE="Rewrite the text below as a plan. Each line: three-letter ID, space, label, colon, description, comma, word count.
+readonly SYS_RESTRUCTURE="Rewrite the text below as a plan. Each line: three-letter ID, space, label, colon, description, comma, word count, comma, deps.
 
 Use these IDs in order: zab, zcd, zef, zij, zkl, zmn, zop, zqr
 
 Example line:
-zab overview: Brief summary of the topic, 100 words
+zab overview: Brief summary of the topic, 100 words, deps:
+zcd details: Key information and steps, 150 words, deps: zab
+zef conclusion: Summary and next steps, 100 words, deps: zcd
 
 Write one line per section. Only plan lines, nothing else."
 
 # Emergency fallback: minimal prompt for pure pattern completion
 readonly SYS_PLAN_MINIMAL="Write a plan like this:
-zab first: Description here, 100 words
-zcd second: Description here, 100 words
-zef third: Description here, 100 words
+zab first: Description here, 100 words, deps:
+zcd second: Description here, 100 words, deps: zab
+zef third: Description here, 100 words, deps: zcd
 
 Write 3 to 5 lines about the topic below."
 
@@ -58,9 +60,9 @@ Do not fail for style preferences. Be strict but fair."
 
 # Fixed template fallback — guarantees the harness always runs even when
 # the LLM cannot produce a valid dynamic plan.
-readonly PLAN_TEMPLATE_GENERIC="zab introduction: Opening section that introduces the topic, 100 words
-zcd body: Main content covering the key points in detail, 200 words
-zef conclusion: Summary and closing thoughts, 100 words"
+readonly PLAN_TEMPLATE_GENERIC="zab introduction: Opening section that introduces the topic, 100 words, deps:
+zcd body: Main content covering the key points in detail, 200 words, deps: zab
+zef conclusion: Summary and closing thoughts, 100 words, deps: zcd"
 
 # Try to normalize and validate a raw plan output.
 # Usage: result="$(_try_normalize "$raw_output")"
@@ -88,7 +90,15 @@ _plan_infer() {
 	local goal="$2"
 	local ec=0
 	local out
-	out="$(infer planner "$sys" "$goal" 2>/dev/null)" || ec=$?
+
+	# MNTO_PLANNER_MODEL takes precedence over role-based model resolution
+	# for planning inference only. Falls back to infer planner otherwise.
+	if [[ -n "${MNTO_PLANNER_MODEL:-}" ]]; then
+		local backend="$MNTO_PLANNER_MODEL"
+		out="$(infer_with_backend "$backend" planner "$sys" "$goal" 2>/dev/null)" || ec=$?
+	else
+		out="$(infer planner "$sys" "$goal" 2>/dev/null)" || ec=$?
+	fi
 
 	if ((ec == 3)); then
 		echo "ERROR: guardrail blocked the request" >&2
@@ -101,6 +111,45 @@ _plan_infer() {
 		return 1
 	fi
 	echo "$out"
+}
+
+# Invoke infer with explicit backend instead of role-based dispatch
+# Usage: out="$(infer_with_backend "$backend" "$role" "$system" "$context")"
+infer_with_backend() {
+	local backend="$1"
+	local role="$2"
+	local system="$3"
+	local context="$4"
+	local outfile="${5:-}"
+
+	# Mirror temperature injection from backend.bash:infer()
+	local temperature
+	case "$role" in
+	planner | verifier) temperature="${MNTO_TEMP_STRUCTURED:-0.2}" ;;
+	proposer | stitcher) temperature="${MNTO_TEMP_CREATIVE:-0.7}" ;;
+	*) temperature="0.7" ;;
+	esac
+	export MNTO_TEMPERATURE="$temperature"
+
+	# Unified validation and dispatch via backend type
+	local backend_type="${backend%%:*}"
+	case "$backend_type" in
+	apfel)
+		_infer_apfel "$system" "$context" "$outfile"
+		;;
+	openai)
+		if _valid_openai_spec "$backend"; then
+			_infer_openai "$backend" "$system" "$context" "$outfile"
+		else
+			echo "ERROR: OpenAI backend requires spec format openai:URL:MODEL" >&2
+			return 1
+		fi
+		;;
+	*)
+		echo "ERROR: Invalid backend specification: $backend" >&2
+		return 1
+		;;
+	esac
 }
 
 # Generate plan from goal using infer planner
@@ -132,6 +181,7 @@ generate_plan() {
 			local ec=$?
 			# Propagate guardrail/overflow, but retry on generic failure
 			if ((ec == 3 || ec == 4)); then
+				export MNTO_TEMP_STRUCTURED="$saved_temp"
 				echo ""
 				return "$ec"
 			fi
@@ -139,6 +189,7 @@ generate_plan() {
 		}
 
 		if result="$(_try_normalize "$raw_output")"; then
+			export MNTO_TEMP_STRUCTURED="$saved_temp"
 			echo "$result"
 			return 0
 		fi

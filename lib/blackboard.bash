@@ -69,7 +69,7 @@ next_task() {
 		return 1
 	fi
 
-	while IFS=' ' read -r id state retries; do
+	while IFS=' ' read -r id state _retries _deps; do
 		if [[ "$state" == "-" ]]; then
 			echo "$id"
 			return 0
@@ -81,12 +81,13 @@ next_task() {
 }
 
 # Update status file for subtask
-# Usage: set_status <tid> <id> <state> <retries>
+# Usage: set_status <tid> <id> <state> <retries> [deps]
 set_status() {
 	local tid="$1"
 	local id="$2"
 	local state="$3"
 	local retries="$4"
+	local deps="${5:-}"
 	if ! validate_id "$tid"; then
 		return 1
 	fi
@@ -105,11 +106,11 @@ set_status() {
 		return 1
 	fi
 
-	while IFS=' ' read -r cur_id cur_state cur_retries; do
+	while IFS=' ' read -r cur_id cur_state cur_retries cur_deps; do
 		if [[ "$cur_id" == "$id" ]]; then
-			echo "$id $state $retries"
+			echo "$id $state $retries ${deps:-$cur_deps}"
 		else
-			echo "$cur_id $cur_state $cur_retries"
+			echo "$cur_id $cur_state $cur_retries ${cur_deps:-}"
 		fi
 	done <"$status_file" >"$tmp_file"
 
@@ -291,6 +292,7 @@ validate_plan_format() {
 }
 
 # Fill in missing word counts with default value
+# Also ensure deps: suffix is present on each line (appended if missing)
 # Usage: fill_missing_word_counts <plan>
 fill_missing_word_counts() {
 	local plan="$1"
@@ -304,6 +306,17 @@ fill_missing_word_counts() {
 		if [[ "$line" =~ ^[a-z]{3}[[:space:]]+[[:alpha:]][[:alpha:][:space:]]*:.+ ]] && [[ ! "$line" =~ ,[[:space:]]*[0-9]+[[:space:]]*words[[:space:]]*$ ]]; then
 			line="${line}, 100 words"
 		fi
+		# Ensure deps: suffix is present (append if missing)
+		if [[ "$line" =~ ^[^,]*[[:space:]]words[[:space:]]*,[[:space:]]*deps: ]]; then
+			# deps: already present, preserve as-is
+			:
+		elif [[ "$line" =~ ^.*[[:space:]]words[[:space:]]* ]]; then
+			# Has word count but no deps: — append deps:
+			line="${line}, deps:"
+		else
+			# No word count and no deps — add both
+			line="${line}, 100 words, deps:"
+		fi
 		result+="${line}"$'\n'
 	done <<<"$plan"
 
@@ -311,6 +324,7 @@ fill_missing_word_counts() {
 }
 
 # Parse plan and create subtask structure
+# Status file entries: "id state retries deps" (deps is comma-separated, or empty for root)
 # Usage: parse_plan <plan> <tid>
 parse_plan() {
 	local plan="$1"
@@ -333,6 +347,7 @@ parse_plan() {
 	echo "$plan" >"$plan_file"
 
 	# Initialize status file with waiting state
+	# Format: id state retries deps (deps from plan line, comma-separated or empty)
 	while IFS=' ' read -r id rest; do
 		if [[ -z "$id" ]]; then
 			continue
@@ -342,7 +357,12 @@ parse_plan() {
 			echo "ERROR: Invalid subtask ID: $id (must be exactly 3 lowercase chars)" >&2
 			return 1
 		fi
-		echo "$id - 0"
+		# Extract deps from the deps: field (last comma-separated field)
+		local deps=""
+		if [[ "$rest" =~ deps:[[:space:]]*([a-z,]*)[[:space:]]*$ ]]; then
+			deps="${BASH_REMATCH[1]:-}"
+		fi
+		echo "$id - 0 $deps"
 		mkdir -p "$bb_dir/$id"
 	done <"$plan_file" >"$status_file"
 }
@@ -363,7 +383,7 @@ count_subtasks() {
 	fi
 
 	local w=0 d=0 c=0 fail=0
-	while IFS=' ' read -r _id state _retries; do
+	while IFS=' ' read -r _id state _retries _deps; do
 		case "$state" in
 		-) w=$((w + 1)) ;;
 		d) d=$((d + 1)) ;;
@@ -435,4 +455,33 @@ get_goal_snippet() {
 	else
 		echo "$goal"
 	fi
+}
+
+# Get dependencies for a subtask
+# Usage: get_task_deps <tid> <subtask_id>
+# Returns: comma-separated dep IDs, or empty string for root steps
+get_task_deps() {
+	local tid="$1"
+	local subtask_id="$2"
+	if ! validate_id "$tid"; then
+		echo ""
+		return 1
+	fi
+	if ! validate_id "$subtask_id"; then
+		echo ""
+		return 1
+	fi
+	local status_file="$BB_DIR/$tid/s"
+	if [[ ! -f "$status_file" ]]; then
+		echo ""
+		return 0
+	fi
+	while IFS=' ' read -r id _state _retries deps; do
+		if [[ "$id" == "$subtask_id" ]]; then
+			echo "${deps:-}"
+			return 0
+		fi
+	done <"$status_file"
+	echo ""
+	return 0
 }
