@@ -163,8 +163,11 @@ verify_subtask() {
 
 	# Quick bash pre-check: fail fast on empty or trivially bad drafts
 	# without wasting an LLM verification call.
+	# 10 chars is below any meaningful sentence fragment; catches empty output,
+	# single-word responses, and inference errors that produce minimal text.
+	local min_draft_len="${MNTO_MIN_DRAFT_LEN:-10}"
 	local draft_len=${#draft}
-	if ((draft_len < 10)); then
+	if ((draft_len < min_draft_len)); then
 		echo "Draft too short (${draft_len} chars)" >"$critique_file"
 		local retries
 		retries="$(get_retries "$tid" "$subtask_id")"
