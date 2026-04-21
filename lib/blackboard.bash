@@ -268,7 +268,7 @@ validate_plan_format() {
 	# generate_plan() handles normalization before this function is called.
 
 	local count=0
-	declare -A seen_ids
+	local -A seen_ids
 	while IFS=' ' read -r id rest; do
 		[[ -z "$id" ]] && continue
 		count=$((count + 1))
@@ -359,7 +359,7 @@ parse_plan() {
 		fi
 		# Extract deps from the deps: field (last comma-separated field)
 		local deps=""
-		if [[ "$rest" =~ deps:[[:space:]]*([a-z,]*)[[:space:]]*$ ]]; then
+		if [[ "$rest" =~ deps:[[:space:]]*(([a-z]{3}(,[a-z]{3})*)?)[[:space:]]*$ ]]; then
 			deps="${BASH_REMATCH[1]:-}"
 		fi
 		echo "$id - 0 $deps"
@@ -484,4 +484,41 @@ get_task_deps() {
 	done <"$status_file"
 	echo ""
 	return 0
+}
+
+# Get subtask IDs that are ready to execute:
+# - state is waiting ("-")
+# - all declared deps are in final state ("f")
+# Usage: get_ready_tasks <tid>
+# Returns: space-separated subtask IDs ready for execution
+get_ready_tasks() {
+	local tid="$1"
+	local status_file="$BB_DIR/$tid/s"
+	[[ ! -f "$status_file" ]] && return 0
+
+	local ready=()
+	while IFS=' ' read -r id state _retries deps; do
+		[[ "$state" != "-" ]] && continue
+
+		# Check all deps are final
+		local all_deps_done=true
+		if [[ -n "$deps" ]]; then
+			for dep in $(echo "$deps" | tr ',' ' '); do
+				local dep_state
+				dep_state="$(awk -v d="$dep" '$1==d{print $2}' "$status_file")"
+				if [[ "$dep_state" != "f" ]]; then
+					all_deps_done=false
+					break
+				fi
+			done
+		fi
+
+		if [[ "$all_deps_done" == "true" ]]; then
+			ready+=("$id")
+		fi
+	done <"$status_file"
+
+	if [[ ${#ready[@]} -gt 0 ]]; then
+		echo "${ready[*]}"
+	fi
 }

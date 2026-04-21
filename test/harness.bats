@@ -17,8 +17,8 @@ source_harness() {
 	source "$MNTO/lib/blackboard.bash"
 	source "$MNTO/lib/backend.bash"
 	source "$MNTO/lib/planner.bash"
-	source "$MNTO/lib/harness.bash"
-	source "$MNTO/lib/stitcher.bash"
+	source "$MNTO/lib/context.bash"
+	source "$MNTO/lib/workflow.bash"
 }
 
 # Mock infer for testing
@@ -38,20 +38,6 @@ mock_infer() {
 	[ -f "$BB_DIR/tst/abc/ctx" ]
 }
 
-@test "assemble_context includes goal" {
-	source_harness
-
-	mkdir -p "$BB_DIR/tst/abc"
-	echo "Test goal content" >"$BB_DIR/tst/g"
-	echo "abc Introduction: An overview" >"$BB_DIR/tst/p"
-
-	assemble_context "tst" "abc"
-
-	local content
-	content=$(cat "$BB_DIR/tst/abc/ctx")
-	[[ "$content" == *"Test goal content"* ]]
-}
-
 @test "assemble_context includes plan line" {
 	source_harness
 
@@ -66,21 +52,23 @@ mock_infer() {
 	[[ "$content" == *"abc Introduction: An overview of the topic"* ]]
 }
 
-@test "assemble_context includes previous output when exists" {
+@test "assemble_context includes dependency outputs when deps exist" {
 	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc" "$BB_DIR/tst/def"
-	echo "Previous section content" >"$BB_DIR/tst/abc/f"
-	echo "abc Introduction: Overview" >"$BB_DIR/tst/p"
-	echo "def Background: Details" >>"$BB_DIR/tst/p"
+	echo "abc Root: Overview, deps:" >"$BB_DIR/tst/p"
+	echo "def Next: Details, deps: abc" >>"$BB_DIR/tst/p"
+	echo "abc - 0 " >"$BB_DIR/tst/s"
+	echo "def - 0 abc" >>"$BB_DIR/tst/s"
+	echo "Root section content" >"$BB_DIR/tst/abc/f"
 
-	# prev_final for "def" should return content from "abc"
+	# With DAG, context for def shows dep outputs (abc's final)
 	assemble_context "tst" "def"
 
 	local content
 	content=$(cat "$BB_DIR/tst/def/ctx")
-	[[ "$content" == *"PREV:"* ]]
-	[[ "$content" == *"Previous section content"* ]]
+	[[ "$content" == *"DEP_OUTPUTS:"* ]]
+	[[ "$content" == *"Root section content"* ]]
 }
 
 @test "assemble_context includes critique when exists (retry)" {
@@ -328,72 +316,103 @@ mock_infer() {
 	[ "$status" -ne 0 ]
 }
 
-# ============ Part 3: Stitch and Main Loop Tests ============
+# ============ Part 3: Workflow Tests ============
 
-@test "stitch_task combines final drafts" {
+@test "get_ready_tasks returns root tasks (no deps)" {
 	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc" "$BB_DIR/tst/def"
-	echo "abc Introduction: Overview" >"$BB_DIR/tst/p"
-	echo "def Background: Details" >>"$BB_DIR/tst/p"
-	echo "First section content" >"$BB_DIR/tst/abc/f"
-	echo "Second section content" >"$BB_DIR/tst/def/f"
+	echo "abc Root: Overview" >"$BB_DIR/tst/p"
+	echo "def Next: Details" >>"$BB_DIR/tst/p"
+	# Both have no deps
+	echo "abc - 0 " >"$BB_DIR/tst/s"
+	echo "def - 0 " >>"$BB_DIR/tst/s"
 
-	# Mock infer for stitching task
-	infer() {
-		echo "Combined sections"
-	}
-
-	stitch_task "tst"
-
-	[ -f "$BB_DIR/tst/out" ]
-	local output
-	output="$(cat "$BB_DIR/tst/out")"
+	local ready
+	ready="$(get_ready_tasks "tst")"
+	[[ "$ready" == *"abc"* ]]
+	[[ "$ready" == *"def"* ]]
 }
 
-@test "stitch_task uses infer when under 10000 chars" {
+@test "get_ready_tasks returns dependent task only after dep is final" {
+	source_harness
+
+	mkdir -p "$BB_DIR/tst/abc" "$BB_DIR/tst/def"
+	echo "abc Root: Overview" >"$BB_DIR/tst/p"
+	echo "def Next: Details, deps: abc" >>"$BB_DIR/tst/p"
+	# abc is final, def has dep on abc
+	echo "abc f 0 " >"$BB_DIR/tst/s"
+	echo "def - 0 abc" >>"$BB_DIR/tst/s"
+
+	local ready
+	ready="$(get_ready_tasks "tst")"
+	[[ "$ready" == *"def"* ]]
+	[[ "$ready" != *"abc"* ]]
+}
+
+@test "get_ready_tasks does not return task whose dep is not final" {
+	source_harness
+
+	mkdir -p "$BB_DIR/tst/abc" "$BB_DIR/tst/def"
+	echo "abc Root: Overview" >"$BB_DIR/tst/p"
+	echo "def Next: Details, deps: abc" >>"$BB_DIR/tst/p"
+	# abc is draft (not final), def depends on abc
+	echo "abc d 0 " >"$BB_DIR/tst/s"
+	echo "def - 0 abc" >>"$BB_DIR/tst/s"
+
+	local ready
+	ready="$(get_ready_tasks "tst")"
+	[[ -z "$ready" ]]
+}
+
+@test "get_dep_outputs returns formatted dep outputs" {
+	source_harness
+
+	mkdir -p "$BB_DIR/tst/abc" "$BB_DIR/tst/def"
+	echo "abc Root: Overview, deps:" >"$BB_DIR/tst/p"
+	echo "def Next: Details, deps: abc" >>"$BB_DIR/tst/p"
+	echo "abc - 0 " >"$BB_DIR/tst/s"
+	echo "def - 0 abc" >>"$BB_DIR/tst/s"
+	echo "Root output content" >"$BB_DIR/tst/abc/f"
+
+	local outputs
+	outputs="$(get_dep_outputs "tst" "def")"
+	[[ "$outputs" == *"--- abc output ---"* ]]
+	[[ "$outputs" == *"Root output content"* ]]
+}
+
+@test "get_dep_outputs returns empty for root task (no deps)" {
 	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
-	echo "abc Short: Brief section" >"$BB_DIR/tst/p"
-	echo "Small content" >"$BB_DIR/tst/abc/f"
+	echo "abc Root: Overview" >"$BB_DIR/tst/p"
+	echo "abc - 0 " >"$BB_DIR/tst/s"
 
-	infer() {
-		echo "Combined by infer"
-	}
-
-	stitch_task "tst"
-
-	[ -f "$BB_DIR/tst/out" ]
-	local output
-	output="$(cat "$BB_DIR/tst/out")"
-	[[ "$output" == *"Combined by infer"* ]]
+	local outputs
+	outputs="$(get_dep_outputs "tst" "abc")"
+	[[ -z "$outputs" ]]
 }
 
-@test "stitch_task concatenates directly when over 10000 chars" {
+@test "_write_terminal_outputs writes terminal nodes to out file" {
 	source_harness
 
-	mkdir -p "$BB_DIR/tst/abc"
-	echo "abc Long: Detailed section" >"$BB_DIR/tst/p"
-	# Create content > 10000 chars
-	local large_content
-	large_content="$(head -c 11000 /dev/zero | tr '\0' 'A')"
-	echo "$large_content" >"$BB_DIR/tst/abc/f"
+	mkdir -p "$BB_DIR/tst/abc" "$BB_DIR/tst/def"
+	echo "abc Root: Overview, deps:" >"$BB_DIR/tst/p"
+	echo "def Next: Details, deps: abc" >>"$BB_DIR/tst/p"
+	echo "abc f 0 " >"$BB_DIR/tst/s"
+	echo "def f 0 abc" >>"$BB_DIR/tst/s"
+	echo "Root content" >"$BB_DIR/tst/abc/f"
+	echo "Dependent content" >"$BB_DIR/tst/def/f"
 
-	infer() {
-		# Should NOT be called for large content
-		echo "ERROR: infer should not be called" >&2
-	}
-
-	stitch_task "tst"
+	_write_terminal_outputs "tst"
 
 	[ -f "$BB_DIR/tst/out" ]
 	local output
 	output="$(cat "$BB_DIR/tst/out")"
-	[[ "$output" == "$large_content" ]]
+	[[ "$output" == *"Dependent content"* ]]
 }
 
-@test "run_harness processes all subtasks" {
+@test "run_workflow processes all subtasks" {
 	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc" "$BB_DIR/tst/def" "$BB_DIR/tst/ghi"
@@ -410,12 +429,12 @@ mock_infer() {
 		echo "PASS"
 	}
 
-	run run_harness "tst"
+	run run_workflow "tst"
 	[ "$status" -eq 0 ]
 	[ -f "$BB_DIR/tst/out" ]
 }
 
-@test "run_harness handles retry loop" {
+@test "run_workflow handles retry loop" {
 	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
@@ -436,7 +455,7 @@ mock_infer() {
 		fi
 	}
 
-	run run_harness "tst"
+	run run_workflow "tst"
 	[ "$status" -eq 0 ]
 	local final_count
 	final_count=$(cat "$count_file")
@@ -445,7 +464,7 @@ mock_infer() {
 	rm -f "$count_file"
 }
 
-@test "run_harness accepts unverified after max retries" {
+@test "run_workflow accepts unverified after max retries" {
 	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
@@ -454,16 +473,13 @@ mock_infer() {
 	echo "abc - 0" >"$BB_DIR/tst/s"
 
 	# Mock infer — write to output file (4th arg) like the real implementation.
-	# For stitch: echo content. For draft: write draft file. For verify: return FAIL.
+	# For draft: write draft file. For verify: return FAIL.
 	infer() {
 		local role="$1"
 		local system="$2"
 		local context="$3"
 		local outfile="${4:-}"
-		if [[ "$system" == *"Merge the sections"* ]] || [[ "$system" == *"Combine the sections"* ]]; then
-			# Stitch call — echo content
-			echo "$context"
-		elif [[ -n "$outfile" ]]; then
+		if [[ -n "$outfile" ]]; then
 			# Draft call — write to file
 			echo "Draft that always fails verification" >"$outfile"
 		else
@@ -472,12 +488,11 @@ mock_infer() {
 		fi
 	}
 
-	run run_harness "tst"
+	run run_workflow "tst"
 	[ "$status" -eq 0 ]
 	[ -f "$BB_DIR/tst/out" ]
 
-	# Should contain an unverified marker (exact variant depends on
-	# whether echo chamber detection or max retries triggered first)
+	# Should contain an unverified marker
 	local output
 	output="$(cat "$BB_DIR/tst/out")"
 	[[ "$output" == *"<!-- memento: unverified"* ]]

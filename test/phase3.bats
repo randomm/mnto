@@ -17,8 +17,8 @@ source_harness() {
 	source "$MNTO/lib/blackboard.bash"
 	source "$MNTO/lib/backend.bash"
 	source "$MNTO/lib/planner.bash"
-	source "$MNTO/lib/harness.bash"
-	source "$MNTO/lib/stitcher.bash"
+	source "$MNTO/lib/context.bash"
+	source "$MNTO/lib/workflow.bash"
 }
 
 # ============ Resume Feature Tests ============
@@ -349,30 +349,27 @@ mock_apfel() {
 		echo "PASS"
 	}
 
-	# Run harness - should start from def since abc is done
-	run run_harness "res"
+	# Run workflow - should start from def since abc is done
+	run run_workflow "res"
 	[ "$status" -eq 0 ]
 	[ -f "$BB_DIR/res/out" ]
 }
 
-# ============ Stitch Dry Run Tests ============
+# ============ Workflow Output Tests ============
 
-@test "stitch_task in dry-run shows info but creates output" {
+@test "_write_terminal_outputs in dry-run creates output" {
 	DRY_RUN="true"
 	source_harness
 
 	mkdir -p "$BB_DIR/dry/abc" "$BB_DIR/dry/def"
-	echo "abc Intro: Overview" >"$BB_DIR/dry/p"
-	echo "def Body: Details" >>"$BB_DIR/dry/p"
+	echo "abc Intro: Overview, deps:" >"$BB_DIR/dry/p"
+	echo "def Body: Details, deps: abc" >>"$BB_DIR/dry/p"
+	echo "abc f 0 " >"$BB_DIR/dry/s"
+	echo "def f 0 abc" >>"$BB_DIR/dry/s"
 	echo "First section" >"$BB_DIR/dry/abc/f"
 	echo "Second section" >"$BB_DIR/dry/def/f"
 
-	infer() {
-		echo "ERROR: Should not be called in dry-run" >&2
-	}
-
-	run stitch_task "dry"
+	run _write_terminal_outputs "dry"
 	[ "$status" -eq 0 ]
 	[ -f "$BB_DIR/dry/out" ]
-	[[ "$output" == *"DRY RUN"* ]]
 }

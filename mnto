@@ -37,8 +37,8 @@ fi
 # ├── blackboard.bash
 # ├── backend.bash (unified inference abstraction — depends on openai.bash)
 # ├── planner.bash
-# ├── harness.bash (depends on: blackboard.bash, planner.bash)
-# ├── stitcher.bash (depends on: blackboard.bash, planner.bash)
+# ├── context.bash (depends on: blackboard.bash)
+# ├── workflow.bash (depends on: blackboard.bash, backend.bash, planner.bash, context.bash)
 # └── maintenance.bash (depends on: blackboard.bash)
 
 # Source library functions (openai.bash before backend.bash for _infer_openai)
@@ -47,8 +47,8 @@ source "$SCRIPT_DIR/lib/blackboard.bash"
 source "$SCRIPT_DIR/lib/backend.bash"
 source "$SCRIPT_DIR/lib/maintenance.bash"
 source "$SCRIPT_DIR/lib/planner.bash"
-source "$SCRIPT_DIR/lib/harness.bash"
-source "$SCRIPT_DIR/lib/stitcher.bash"
+source "$SCRIPT_DIR/lib/context.bash"
+source "$SCRIPT_DIR/lib/workflow.bash"
 source "$SCRIPT_DIR/lib/direct.bash"
 
 # Global options
@@ -186,8 +186,8 @@ create_task() {
 	# Parse plan into structure
 	parse_plan "$plan" "$tid"
 
-	# Run the draft-verify harness
-	run_harness "$tid"
+	# Run the workflow executor
+	run_workflow "$tid"
 
 	echo "Created task: $tid"
 }
@@ -205,55 +205,44 @@ resume_task() {
 		exit 1
 	fi
 
-	# Read current state and find next waiting subtask
+	# Read current state and find next ready subtasks
 	local status_file="$bb_dir/s"
 	if [[ ! -f "$status_file" ]]; then
 		echo "ERROR: Task '$tid' has no status file" >&2
 		exit 1
 	fi
 
-	# Find first subtask that is not yet final
-	local next_subtask=""
-	while IFS=' ' read -r subtask_id state _rest_retries; do
-		if [[ "$state" != "f" ]]; then
-			next_subtask="$subtask_id"
-			break
-		fi
-	done <"$status_file"
+	# Get all ready subtasks (those with all deps satisfied)
+	local ready_tasks
+	ready_tasks="$(get_ready_tasks "$tid")"
 
-	if [[ -z "$next_subtask" ]]; then
-		# All done - just stitch
-		print_status "INFO" "All subtasks complete, stitching output"
-		if stitch_task "$tid"; then
+	if [[ -z "$ready_tasks" ]]; then
+		# Check if all are complete (final state)
+		local incomplete
+		incomplete="$(awk '$2 != "f" {count++} END {print count+0}' "$status_file")"
+		if ((incomplete == 0)); then
+			# All done - write terminal outputs
+			print_status "INFO" "All subtasks complete, writing outputs"
+			_write_terminal_outputs "$tid"
 			print_status "PASS" "Task $tid completed (resumed)"
 		else
-			print_status "FAIL" "Failed to stitch task $tid"
+			print_status "FAIL" "No ready tasks but task not complete (possible DAG deadlock)"
 			exit 1
 		fi
 	else
-		# Resume from next subtask
-		print_status "INFO" "Resuming task $tid from subtask $next_subtask"
+		# Process ready subtasks using workflow logic
+		print_status "INFO" "Resuming task $tid with ready subtasks: $ready_tasks"
 
-		# Process remaining subtasks in loop
-		while [[ -n "$next_subtask" ]]; do
-			print_status "INFO" "Processing subtask $next_subtask"
-
-			if ! process_subtask "$tid" "$next_subtask"; then
-				print_status "FAIL" "Subtask $next_subtask: max retries exceeded or failed"
-			fi
-
-			# Find next waiting subtask
-			next_subtask="$(next_task "$tid")"
-			if [[ "$next_subtask" == "NULL" ]]; then
-				next_subtask=""
-			fi
+		# Initialize ready queue with currently ready tasks
+		local -a ready_queue=()
+		for rt in $ready_tasks; do
+			ready_queue+=("$rt")
 		done
 
-		# Stitch all final drafts
-		if ! stitch_task "$tid"; then
-			echo "ERROR: Failed to stitch task $tid" >&2
-			exit 1
-		fi
+		_run_dag_from_queue "$tid" "${ready_queue[@]}"
+
+		# Write terminal outputs
+		_write_terminal_outputs "$tid"
 		print_status "PASS" "Task $tid completed (resumed)"
 	fi
 
