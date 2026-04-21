@@ -285,7 +285,8 @@ mock_infer() {
 	source_harness
 
 	mkdir -p "$BB_DIR/tst/abc"
-	echo "abc c 1" >"$BB_DIR/tst/s"
+	# Status file now has 4 fields: id state retries deps
+	echo "abc c 1 " >"$BB_DIR/tst/s"
 
 	run handle_retry "tst" "abc" 3
 	[ "$status" -eq 0 ]
@@ -296,7 +297,7 @@ mock_infer() {
 
 	local status
 	status=$(grep "^abc" "$BB_DIR/tst/s")
-	[[ "$status" == "abc c 2" ]]
+	[[ "$status" == "abc c 2 "* ]]
 }
 
 @test "handle_retry accepts draft after max retries" {

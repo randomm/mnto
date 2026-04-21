@@ -194,12 +194,13 @@ teardown() {
 	source "$MNTO/lib/blackboard.bash"
 
 	echo -e "abc Task A\ndef Task B" >"$BB_DIR/xyz/p"
-	echo -e "abc - 0\ndef - 0" >"$BB_DIR/xyz/s"
+	# Status file now has 4 fields: id state retries deps
+	echo -e "abc - 0 \ndef - 0 " >"$BB_DIR/xyz/s"
 
 	set_status "xyz" "abc" "d" "0"
 
 	local expected
-	expected=$(echo -e "abc d 0\ndef - 0")
+	expected=$(echo -e "abc d 0 \ndef - 0 ")
 	local actual
 	actual=$(cat "$BB_DIR/xyz/s")
 
