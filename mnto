@@ -233,99 +233,13 @@ resume_task() {
 		# Process ready subtasks using workflow logic
 		print_status "INFO" "Resuming task $tid with ready subtasks: $ready_tasks"
 
-		# Build in-degree map for remaining work
-		declare -A in_degree
-		declare -A dependents
-		local -a all_subtasks=()
-
-		while IFS=' ' read -r id state _retries deps; do
-			[[ -z "$id" ]] && continue
-			all_subtasks+=("$id")
-			local count=0
-			if [[ -n "$deps" ]]; then
-				for dep in $(echo "$deps" | tr ',' ' '); do
-					count=$((count + 1))
-				done
-			fi
-			in_degree[$id]=$count
-		done <"$status_file"
-
-		# Build reverse dependency map
-		for subtask in "${all_subtasks[@]}"; do
-			local st_deps
-			st_deps="$(get_task_deps "$tid" "$subtask")"
-			if [[ -n "$st_deps" ]]; then
-				for dep in $(echo "$st_deps" | tr ',' ' '); do
-					dependents[$dep]="${dependents[$dep]:-}${dependents[$dep]:+,}$subtask"
-				done
-			fi
-		done
-
 		# Initialize ready queue with currently ready tasks
 		local -a ready_queue=()
 		for rt in $ready_tasks; do
 			ready_queue+=("$rt")
 		done
 
-		# Circuit breaker state
-		local max_consecutive_failures="${MNTO_CIRCUIT_BREAKER:-3}"
-		local consecutive_failures=0
-
-		# Process ready queue using Kahn's algorithm
-		while [[ ${#ready_queue[@]} -gt 0 ]]; do
-			local current="${ready_queue[0]}"
-			ready_queue=("${ready_queue[@]:1}")
-
-			if [[ -z "$current" ]]; then
-				continue
-			fi
-
-			print_status "INFO" "Processing subtask $current"
-
-			if ! process_subtask "$tid" "$current"; then
-				consecutive_failures=$((consecutive_failures + 1))
-				print_status "FAIL" "Subtask $current: max retries exceeded or failed"
-
-				if ((consecutive_failures >= max_consecutive_failures)); then
-					print_status "FAIL" "Circuit breaker triggered"
-					exit 1
-				fi
-			else
-				consecutive_failures=0
-
-				# Decrement in-degree of dependents; enqueue if now ready
-				local dep_deps="${dependents[$current]:-}"
-				if [[ -n "$dep_deps" ]]; then
-					for dependent in $(echo "$dep_deps" | tr ',' ' '); do
-						in_degree[$dependent]=$((in_degree[$dependent] - 1))
-						if [[ "${in_degree[$dependent]}" == "0" ]]; then
-							ready_queue+=("$dependent")
-						fi
-					done
-				fi
-			fi
-
-			# Get any newly ready tasks
-			local new_ready
-			new_ready="$(get_ready_tasks "$tid")"
-			for nr in $new_ready; do
-				local found=false
-				for q in "${ready_queue[@]}"; do
-					if [[ "$q" == "$nr" ]]; then
-						found=true
-						break
-					fi
-				done
-				if ! "$found"; then
-					# Check if already processed (final state)
-					local state
-					state="$(awk -v s="$nr" '$1==s {print $2}' "$status_file")"
-					if [[ "$state" != "f" ]]; then
-						ready_queue+=("$nr")
-					fi
-				fi
-			done
-		done
+		_run_dag_from_queue "$tid" "${ready_queue[@]}"
 
 		# Write terminal outputs
 		_write_terminal_outputs "$tid"

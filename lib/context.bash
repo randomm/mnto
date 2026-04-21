@@ -26,6 +26,10 @@ get_dep_outputs() {
 	local output=""
 	local dep
 	for dep in $(echo "$deps" | tr ',' ' '); do
+		# Validate dep ID before using as path component
+		if ! validate_id "$dep" 2>/dev/null; then
+			continue
+		fi
 		local dep_file="$BB_DIR/$tid/$dep/f"
 		if [[ -f "$dep_file" ]]; then
 			output+="--- $dep output ---"$'\n'

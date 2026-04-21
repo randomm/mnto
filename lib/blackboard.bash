@@ -268,7 +268,7 @@ validate_plan_format() {
 	# generate_plan() handles normalization before this function is called.
 
 	local count=0
-	declare -A seen_ids
+	local -A seen_ids
 	while IFS=' ' read -r id rest; do
 		[[ -z "$id" ]] && continue
 		count=$((count + 1))
@@ -359,7 +359,7 @@ parse_plan() {
 		fi
 		# Extract deps from the deps: field (last comma-separated field)
 		local deps=""
-		if [[ "$rest" =~ deps:[[:space:]]*([a-z,]*)[[:space:]]*$ ]]; then
+		if [[ "$rest" =~ deps:[[:space:]]*(([a-z]{3}(,[a-z]{3})*)?)[[:space:]]*$ ]]; then
 			deps="${BASH_REMATCH[1]:-}"
 		fi
 		echo "$id - 0 $deps"
@@ -518,5 +518,7 @@ get_ready_tasks() {
 		fi
 	done <"$status_file"
 
-	echo "${ready[@]:-}"
+	if [[ ${#ready[@]} -gt 0 ]]; then
+		echo "${ready[*]}"
+	fi
 }

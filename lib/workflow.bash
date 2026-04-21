@@ -28,10 +28,11 @@ _log_error() {
 	local log_file="$bb_dir/errors.jsonl"
 	local timestamp
 	timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	local safe_message="${message//$'\n'/ }"
 
 	# Append structured error (JSONL format)
 	printf '{"ts":"%s","tid":"%s","stage":"%s","msg":"%s"}\n' \
-		"$timestamp" "$tid" "$stage" "$message" >>"$log_file" 2>/dev/null || true
+		"$timestamp" "$tid" "$stage" "$safe_message" >>"$log_file" 2>/dev/null || true
 }
 
 # Print colored status message
@@ -61,7 +62,7 @@ get_retries() {
 		return
 	fi
 
-	while IFS=' ' read -r id _state retries; do
+	while IFS=' ' read -r id _state retries _deps; do
 		if [[ "$id" == "$subtask_id" ]]; then
 			echo "$retries"
 			return
@@ -501,7 +502,7 @@ _write_terminal_outputs() {
 	done <"$plan_file"
 
 	# Find terminal nodes (subtasks not in any dep list)
-	declare -A appears_as_dep
+	local -A appears_as_dep
 	for st in "${all_subtasks[@]}"; do
 		appears_as_dep[$st]=0
 	done
@@ -549,37 +550,24 @@ _write_terminal_outputs() {
 	mv "$tmp_out" "$out_file"
 }
 
-# Run the workflow using Kahn's algorithm for DAG execution
-# Usage: run_workflow <tid>
-# Returns: 0 on success, 1 on failure
-run_workflow() {
+# Execute DAG from a pre-built ready queue
+# Usage: _run_dag_from_queue <tid> <ready_queue_items...>
+# Caller builds initial queue; this function handles Kahn's traversal
+_run_dag_from_queue() {
 	local tid="$1"
-
-	if ! validate_id "$tid"; then
-		return 1
-	fi
-
+	shift
+	local -a ready_queue=("$@")
 	local bb_dir="$BB_DIR/$tid"
-	local plan_file="$bb_dir/p"
 	local status_file="$bb_dir/s"
 
-	if [[ ! -f "$plan_file" ]]; then
-		echo "ERROR: Plan file not found: $plan_file" >&2
-		return 1
-	fi
-
-	print_status "INFO" "Starting workflow for task $tid"
-
-	# Build in-degree map and dependency graph from status file
-	declare -A in_degree
-	declare -A dep_list
+	# Build in_degree and dependents maps from status file
+	local -A in_degree dep_list dependents
 	local -a all_subtasks=()
 
 	while IFS=' ' read -r id state retries deps; do
 		[[ -z "$id" ]] && continue
 		all_subtasks+=("$id")
 		dep_list[$id]="${deps:-}"
-		# Count unmet deps (initially all deps are unmet because no task is final yet)
 		local count=0
 		if [[ -n "$deps" ]]; then
 			for dep in $(echo "$deps" | tr ',' ' '); do
@@ -589,22 +577,13 @@ run_workflow() {
 		in_degree[$id]=$count
 	done <"$status_file"
 
-	# Build reverse dependency map: for each dep, which tasks depend on it
-	declare -A dependents
+	# Build reverse dependency map
 	for subtask in "${all_subtasks[@]}"; do
 		local deps="${dep_list[$subtask]:-}"
 		if [[ -n "$deps" ]]; then
 			for dep in $(echo "$deps" | tr ',' ' '); do
 				dependents[$dep]="${dependents[$dep]:-}${dependents[$dep]:+,}$subtask"
 			done
-		fi
-	done
-
-	# Find initial ready tasks (in_degree == 0)
-	local -a ready_queue=()
-	for subtask in "${all_subtasks[@]}"; do
-		if [[ "${in_degree[$subtask]:-}" == "0" ]]; then
-			ready_queue+=("$subtask")
 		fi
 	done
 
@@ -667,6 +646,55 @@ run_workflow() {
 			fi
 		fi
 	done
+}
+
+# Run the workflow using Kahn's algorithm for DAG execution
+# Usage: run_workflow <tid>
+# Returns: 0 on success, 1 on failure
+run_workflow() {
+	local tid="$1"
+
+	if ! validate_id "$tid"; then
+		return 1
+	fi
+
+	local bb_dir="$BB_DIR/$tid"
+	local plan_file="$bb_dir/p"
+	local status_file="$bb_dir/s"
+
+	if [[ ! -f "$plan_file" ]]; then
+		echo "ERROR: Plan file not found: $plan_file" >&2
+		return 1
+	fi
+
+	print_status "INFO" "Starting workflow for task $tid"
+
+	# Build in-degree map and find initial ready tasks
+	local -A in_degree dep_list
+	local -a all_subtasks=()
+
+	while IFS=' ' read -r id state retries deps; do
+		[[ -z "$id" ]] && continue
+		all_subtasks+=("$id")
+		dep_list[$id]="${deps:-}"
+		local count=0
+		if [[ -n "$deps" ]]; then
+			for dep in $(echo "$deps" | tr ',' ' '); do
+				count=$((count + 1))
+			done
+		fi
+		in_degree[$id]=$count
+	done <"$status_file"
+
+	# Find initial ready tasks (in_degree == 0)
+	local -a ready_queue=()
+	for subtask in "${all_subtasks[@]}"; do
+		if [[ "${in_degree[$subtask]:-}" == "0" ]]; then
+			ready_queue+=("$subtask")
+		fi
+	done
+
+	_run_dag_from_queue "$tid" "${ready_queue[@]}"
 
 	# All subtasks processed — write terminal outputs to out file
 	_write_terminal_outputs "$tid"
