@@ -4,7 +4,6 @@
 #
 # Usage:
 #   ./test/e2e/e2e-qa.sh              Run all scenarios (mock mode)
-#   ./test/e2e/e2e-qa.sh --live       Run scenarios requiring real inference
 #   ./test/e2e/e2e-qa.sh --scenario N Run specific scenario (01-06)
 #   ./test/e2e/e2e-qa.sh --dry-run    Show what would run
 
@@ -23,7 +22,6 @@ Delegates to bats for actual test execution.
 
 OPTIONS:
     --scenario N     Run specific scenario (01-06)
-    --live           Run scenarios requiring real inference (requires MNTO_MODEL)
     --dry-run        Show what would run without executing
     --help           Show this help message
 
@@ -52,9 +50,6 @@ main() {
 		--scenario)
 			scenario_filter="$2"
 			shift 2
-			;;
-		--live)
-			shift
 			;;
 		--dry-run)
 			is_dry_run=true

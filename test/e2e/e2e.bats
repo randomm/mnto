@@ -4,6 +4,12 @@
 # Tests the full workflow orchestrator with realistic multi-step scenarios.
 # Uses mock_infer to avoid real inference calls.
 #
+# NOTE: These tests use source_harness() to load library functions directly
+# rather than invoking ./mnto as a black box. This is intentional — it enables
+# mock inference without requiring a live LLM server. Full CLI-level e2e tests
+# will be added in issue #77 (context-overflow benchmark) when live inference
+# scenarios are needed.
+#
 # Scenarios:
 #   01  Single-shot routing      - Direct mode for short goals
 #   02  Workflow routing        - Harness mode with --workflow flag
@@ -17,6 +23,27 @@ setup() {
 	export TEST_BB_DIR="$BATS_TMPDIR/mnto-e2e-$BATS_TEST_NUMBER"
 	export BB_DIR="$TEST_BB_DIR/.bb"
 	mkdir -p "$BB_DIR"
+}
+
+# Standard mock infer — returns mock drafts for proposer, PASS 8 for verifier
+setup_mock_infer() {
+	infer() {
+		local role="$1"
+		local system="$2"
+		local context="$3"
+		local outfile="${4:-}"
+
+		case "$role" in
+		proposer)
+			if [[ -n "$outfile" ]]; then
+				echo "Mock draft content" >"$outfile"
+			else
+				echo "Mock draft content"
+			fi
+			;;
+		verifier) echo "PASS 8" ;;
+		esac
+	}
 }
 
 teardown() {
@@ -110,28 +137,7 @@ zcd issues: Identify potential issues with the implementation, 80 words, deps: z
 zef improve: Suggest specific improvements, 80 words, deps: zcd"
 
 	# Mock infer for full workflow execution
-	infer() {
-		local role="$1"
-		local system="$2"
-		local context="$3"
-		local outfile="${4:-}"
-
-		case "$role" in
-		planner)
-			echo "$plan"
-			;;
-		proposer)
-			if [[ -n "$outfile" ]]; then
-				echo "Draft content for this subtask" >"$outfile"
-			else
-				echo "Draft content for this subtask"
-			fi
-			;;
-		verifier)
-			echo "PASS 8"
-			;;
-		esac
-	}
+	setup_mock_infer
 
 	# Parse the plan to set up the DAG
 	parse_plan "$plan" "$tid"
@@ -162,12 +168,12 @@ zef improve: Suggest specific improvements, 80 words, deps: zcd"
 
 	# Signal 4: Verify status file records correct deps (proves DAG parsing correct)
 	local zab_deps zcd_deps zef_deps
-	zab_deps=$(grep "^zab " "$BB_DIR/$tid/s" | awk '{print $4}')
-	zcd_deps=$(grep "^zcd " "$BB_DIR/$tid/s" | awk '{print $4}')
-	zef_deps=$(grep "^zef " "$BB_DIR/$tid/s" | awk '{print $4}')
-	[ "$zab_deps" = "" ]       # zab has no deps
-	[ "$zcd_deps" = "zab" ]   # zcd depends on zab
-	[ "$zef_deps" = "zcd" ]   # zef depends on zcd
+	zab_deps=$(grep "^zab " "$BB_DIR/$tid/s" | awk '{print $4}') || true
+	zcd_deps=$(grep "^zcd " "$BB_DIR/$tid/s" | awk '{print $4}') || true
+	zef_deps=$(grep "^zef " "$BB_DIR/$tid/s" | awk '{print $4}') || true
+	[ "$zab_deps" == "" ]       # zab has no deps
+	[ "$zcd_deps" == "zab" ]   # zcd depends on zab
+	[ "$zef_deps" == "zcd" ]   # zef depends on zcd
 
 	# Also verify status file shows correct final states
 	local zab_status zcd_status zef_status
@@ -356,25 +362,7 @@ zef improve: Suggest improvements, 80 words, deps: zcd"
 	export MNTO_MODEL="openai:http://localhost:11434/v1:executor-model"
 
 	# Mock infer that tracks roles
-	infer() {
-		local role="$1"
-		local system="$2"
-		local context="$3"
-		local outfile="${4:-}"
-
-		case "$role" in
-		proposer)
-			if [[ -n "$outfile" ]]; then
-				echo "Draft content for $role" >"$outfile"
-			else
-				echo "Draft content for $role"
-			fi
-			;;
-		verifier)
-			echo "PASS 8"
-			;;
-		esac
-	}
+	setup_mock_infer
 
 	# Create a goal
 	echo "Perform a complex multi-step analysis" >"$BB_DIR/$tid/g"
