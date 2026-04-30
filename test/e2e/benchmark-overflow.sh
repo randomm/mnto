@@ -90,167 +90,45 @@ EOF
 # Outputs the generated content to stdout
 generate_code_review_scenario() {
 	local scenario="$1"
-	local nl=$'\n'
-	local content=""
-	local line_count=0
 
+	local line_count
 	case "$scenario" in
-	A)
-		# ~10K tokens, ~40K chars: small code review
-		# Generate ~200 lines of code with 200 chars per line
-		line_count=200
-		;;
-	B)
-		# ~30K tokens, ~120K chars: medium PR diff
-		# Generate ~600 lines
-		line_count=600
-		;;
-	C)
-		# ~60K tokens, ~240K chars: large API migration
-		# Generate ~1200 lines
-		line_count=1200
-		;;
+	A) line_count=200 ;;
+	B) line_count=600 ;;
+	C) line_count=1200 ;;
+	*) line_count=200 ;;
 	esac
 
-	# Each line: ~200 chars of code-like content
+	local tmpfile
+	tmpfile="$(mktemp)"
+
+	# Header
+	{
+		printf '# Code Review Scenario %s\n' "$scenario"
+		printf '# Generated for context overflow benchmark\n'
+		printf '# Lines: %d, Chars: ~%d\n' "$line_count" "$((line_count * 200))"
+		printf '\n'
+	} >>"$tmpfile"
+
 	local i=1
 	local func_name params comment
 	while ((i <= line_count)); do
-		# Generate a line that looks like code with unique markers per line
-		# Format: function name, some params, and a comment with line number
 		func_name="func_$(printf '%04d' "$i")"
 		params="param_${i}_a, param_${i}_b, param_${i}_c"
 		comment="// Line ${i} marker for quality verification"
-
-		# Alternate between different code patterns
 		case $((i % 4)) in
-		0)
-			content+="function ${func_name}(${params}) { ${comment}; return ${i}; }$${func_name}();${nl}"
-			;;
-		1)
-			content+="class Handler${i} { private val=${i}; ${comment} }${nl}"
-			;;
-		2)
-			content+="const ${func_name} = async (${params}) => { ${comment}; };${nl}"
-			;;
-		3)
-			content+="export ${func_name}(${params}); // ${comment} ${i}${nl}"
-			;;
+		0) printf 'function %s(%s) { %s; return %d; }\n' "$func_name" "$params" "$comment" "$i" >>"$tmpfile" ;;
+		1) printf 'class Handler%d { private val=%d; %s }\n' "$i" "$i" "$comment" >>"$tmpfile" ;;
+		2) printf 'const %s = async (%s) => { %s; };\n' "$func_name" "$params" "$comment" >>"$tmpfile" ;;
+		3) printf 'export %s(%s); // %s %d\n' "$func_name" "$params" "$comment" "$i" >>"$tmpfile" ;;
 		esac
 		i=$((i + 1))
 	done
 
-	# Add a header with scenario info for quality verification
-	local header="# Code Review Scenario ${scenario}${nl}"
-	header+="# Generated for context overflow benchmark${nl}"
-	header+="# Lines: ${line_count}, Chars: ~$((line_count * 200))${nl}"
-	header+="# Mid-input marker: CODE_REVIEW_SCENARIO_${scenario}_MIDPOINT${nl}"
-	header+="${nl}${content}"
+	printf '\n# END_MARKER_%s_AT_LINE_%d\n' "$scenario" "$line_count" >>"$tmpfile"
 
-	# Also add end marker for quality verification
-	header+="${nl}# END_MARKER_${scenario}_AT_LINE_${line_count}${nl}"
-
-	printf '%s' "$header"
-}
-
-# Generate PR diff scenario
-# Usage: generate_pr_diff_scenario <scenario_char>
-# Outputs the generated content to stdout
-generate_pr_diff_scenario() {
-	local scenario="$1"
-	local nl=$'\n'
-	local content=""
-	local line_count=0
-
-	case "$scenario" in
-	A)
-		line_count=200
-		;;
-	B)
-		line_count=600
-		;;
-	C)
-		line_count=1200
-		;;
-	esac
-
-	# PR diff format: +lines (additions), -lines (deletions), context
-	local i=1
-	while ((i <= line_count)); do
-		case $((i % 3)) in
-		0)
-			content+="-// Removed old implementation line ${i}${nl}"
-			;;
-		1)
-			content+="+// New implementation line ${i} with marker PR_DIFF_${scenario}_${i}${nl}"
-			;;
-		2)
-			content+=" // Context line ${i} unchanged${nl}"
-			;;
-		esac
-		i=$((i + 1))
-	done
-
-	local header="# PR Diff Scenario ${scenario}${nl}"
-	header+="# Generated for context overflow benchmark${nl}"
-	header+="# Diff size: ~${line_count} changes${nl}"
-	header+="# Mid-input marker: PR_DIFF_SCENARIO_${scenario}_MIDPOINT${nl}"
-	header+="${nl}${content}"
-
-	printf '%s' "$header"
-}
-
-# Generate API migration scenario
-# Usage: generate_api_migration_scenario <scenario_char>
-# Outputs the generated content to stdout
-generate_api_migration_scenario() {
-	local scenario="$1"
-	local nl=$'\n'
-	local content=""
-	local line_count=0
-
-	case "$scenario" in
-	A)
-		line_count=200
-		;;
-	B)
-		line_count=600
-		;;
-	C)
-		line_count=1200
-		;;
-	esac
-
-	# API migration: endpoint definitions, request/response shapes
-	local i=1
-	while ((i <= line_count)); do
-		case $((i % 5)) in
-		0)
-			content+="POST /api/v1/resource_${i} { body: RequestBody${i} } => Response${i} // API_MIGRATION_${scenario}_${i}${nl}"
-			;;
-		1)
-			content+="GET /api/v1/resource_${i}/{id} => SingleResource${i} // Midpoint marker API_MIGRATION_${scenario}_MIDPOINT${nl}"
-			;;
-		2)
-			content+="interface RequestBody${i} { field${i}: string; count: number; } // Migration ${i}${nl}"
-			;;
-		3)
-			content+="interface Response${i} { id: string; data: Data${i}; status: 'ok'; } // Response ${i}${nl}"
-			;;
-		4)
-			content+="type Data${i} = { items: Item${i}[]; total: number; } // Data structure ${i}${nl}"
-			;;
-		esac
-		i=$((i + 1))
-	done
-
-	local header="# API Migration Scenario ${scenario}${nl}"
-	header+="# Generated for context overflow benchmark${nl}"
-	header+="# Endpoints: ~${line_count}${nl}"
-	header+="# Mid-input marker: API_MIGRATION_${scenario}_MIDPOINT${nl}"
-	header+="${nl}${content}"
-
-	printf '%s' "$header"
+	cat "$tmpfile"
+	rm -f "$tmpfile"
 }
 
 # Run a single benchmark test
@@ -270,9 +148,9 @@ run_benchmark() {
 	local timing_file="${output_dir}/${test_name}.timing"
 	local meta_file="${output_dir}/${test_name}.meta"
 
-	# Set MNTO_DIRECT_THRESHOLD to force mode
-	# Direct: set high threshold so everything goes direct
-	# Workflow: set threshold to 0 so nothing goes direct
+	# Force routing mode via threshold env var (internal test interface):
+	# - MNTO_DIRECT_THRESHOLD=999999: input always below threshold → direct/single-shot
+	# - MNTO_DIRECT_THRESHOLD=0: input always above threshold → workflow
 
 	# Record start time (seconds since epoch)
 	start_time="$(date +%s)"
@@ -308,30 +186,20 @@ run_benchmark() {
 	if [[ -n "$created_tid" ]] && [[ -f ".mnto/bb/${created_tid}/out" ]]; then
 		output_text="$(cat ".mnto/bb/${created_tid}/out")"
 		line_count="$(echo "$output_text" | wc -l | tr -d ' ')"
-		# Quality check: look for mid-input markers
+		# Quality check: verify output has substantial content
+		# (LLMs don't reproduce input verbatim; check structural completeness instead)
+		local min_lines
 		case "$scenario" in
-		A)
-			if echo "$output_text" | grep -q "CODE_REVIEW_SCENARIO_A_MIDPOINT"; then
-				quality_check="midpoint_marker_found"
-			else
-				quality_check="midpoint_marker_missing"
-			fi
-			;;
-		B)
-			if echo "$output_text" | grep -q "PR_DIFF_SCENARIO_B_MIDPOINT"; then
-				quality_check="midpoint_marker_found"
-			else
-				quality_check="midpoint_marker_missing"
-			fi
-			;;
-		C)
-			if echo "$output_text" | grep -q "API_MIGRATION_C_MIDPOINT"; then
-				quality_check="midpoint_marker_found"
-			else
-				quality_check="midpoint_marker_missing"
-			fi
-			;;
+		A) min_lines=5 ;;
+		B) min_lines=10 ;;
+		C) min_lines=15 ;;
+		*) min_lines=5 ;;
 		esac
+		if ((line_count >= min_lines)); then
+			quality_check="output_substantial"
+		else
+			quality_check="output_too_short"
+		fi
 	elif ((exit_code != 0)); then
 		# Failed - capture error for meta
 		output_text="FAILED_WITH_EXIT_${exit_code}"
@@ -364,7 +232,7 @@ duration=$duration
 quality_check=$quality_check
 EOF
 
-	return 0
+	return "$exit_code"
 }
 
 # Generate RESULTS.md from benchmark run
@@ -469,19 +337,15 @@ EOF
 		local workflow_meta="${run_dir}/${scenario}_workflow.meta"
 
 		if [[ -f "$direct_meta" ]]; then
-			local direct_exit
-			direct_exit="$(grep '^exit_code=' "$direct_meta" | cut -d= -f2 || echo "1")"
-			if ((direct_exit != 0)); then
-				direct_failures=$((direct_failures + 1))
-			fi
+			local exit_code=0 line_count=0 duration=0 quality_check=""
+			_read_meta "$direct_meta"
+			((exit_code != 0)) && direct_failures=$((direct_failures + 1))
 		fi
 
 		if [[ -f "$workflow_meta" ]]; then
-			local workflow_exit
-			workflow_exit="$(grep '^exit_code=' "$workflow_meta" | cut -d= -f2 || echo "1")"
-			if ((workflow_exit != 0)); then
-				workflow_failures=$((workflow_failures + 1))
-			fi
+			local exit_code=0 line_count=0 duration=0 quality_check=""
+			_read_meta "$workflow_meta"
+			((exit_code != 0)) && workflow_failures=$((workflow_failures + 1))
 		fi
 	done
 
@@ -506,7 +370,7 @@ EOF
 	cat >>"$results_file" <<EOF
 
 ---
-*Generated: $(date -Iseconds)*
+*Generated: $(date +"%Y-%m-%dT%H:%M:%S%z")*
 EOF
 
 	echo "Results written to: $results_file"
