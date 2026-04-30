@@ -113,45 +113,6 @@ _plan_infer() {
 	echo "$out"
 }
 
-# Invoke infer with explicit backend instead of role-based dispatch
-# Usage: out="$(infer_with_backend "$backend" "$role" "$system" "$context")"
-infer_with_backend() {
-	local backend="$1"
-	local role="$2"
-	local system="$3"
-	local context="$4"
-	local outfile="${5:-}"
-
-	# Mirror temperature injection from backend.bash:infer()
-	local temperature
-	case "$role" in
-	planner | verifier) temperature="${MNTO_TEMP_STRUCTURED:-0.2}" ;;
-	proposer | stitcher) temperature="${MNTO_TEMP_CREATIVE:-0.7}" ;;
-	*) temperature="0.7" ;;
-	esac
-	export MNTO_TEMPERATURE="$temperature"
-
-	# Unified validation and dispatch via backend type
-	local backend_type="${backend%%:*}"
-	case "$backend_type" in
-	apfel)
-		_infer_apfel "$system" "$context" "$outfile"
-		;;
-	openai)
-		if _valid_openai_spec "$backend"; then
-			_infer_openai "$backend" "$system" "$context" "$outfile"
-		else
-			echo "ERROR: OpenAI backend requires spec format openai:URL:MODEL" >&2
-			return 1
-		fi
-		;;
-	*)
-		echo "ERROR: Invalid backend specification: $backend" >&2
-		return 1
-		;;
-	esac
-}
-
 # Generate plan from goal using infer planner
 # Strategy: multi-sample with same prompt (up to 3), then restructure
 # fallback, then minimal prompt, then fixed template.

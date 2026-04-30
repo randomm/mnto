@@ -13,6 +13,34 @@ set -euo pipefail
 [[ -n "${_BACKEND_SOURCED:-}" ]] && return 0
 declare -r _BACKEND_SOURCED=1
 
+# Usage: _infer_dispatch <backend_spec> <system> <context> <outfile>
+# Internal: dispatch to backend implementation
+# Returns: 0 on success, 1 on failure, 3 on guardrail, 4 on overflow
+_infer_dispatch() {
+	local backend="$1"
+	local system="$2"
+	local context="$3"
+	local outfile="${4:-}"
+
+	local backend_type="${backend%%:*}"
+	case "$backend_type" in
+	apfel)
+		_infer_apfel "$system" "$context" "$outfile"
+		;;
+	openai)
+		_valid_openai_spec "$backend" || {
+			echo "ERROR: OpenAI backend requires spec format openai:URL:MODEL" >&2
+			return 1
+		}
+		_infer_openai "$backend" "$system" "$context" "$outfile"
+		;;
+	*)
+		echo "ERROR: Invalid backend specification: $backend (expected openai:URL:MODEL)" >&2
+		return 1
+		;;
+	esac
+}
+
 # Usage: infer <role> <system_prompt> <context> [output_file]
 # Role-based inference dispatcher
 # role: planner|proposer|verifier|stitcher
@@ -45,33 +73,7 @@ infer() {
 	local backend
 	backend="$(_resolve_backend "$role")"
 
-	# Unified validation and dispatch:
-	# - Extract backend type (before first colon)
-	# - Validate according to type
-	# - Dispatch to appropriate function
-	local backend_type="${backend%%:*}"
-	case "$backend_type" in
-	apfel)
-		# apfel backend accepts both "apfel" and "apfel:spec"
-		# (apfel has no temperature control — env var is ignored)
-		_infer_apfel "$system" "$context" "$outfile"
-		;;
-	openai)
-		# OpenAI backend requires full spec: openai:URL:MODEL (two colons after prefix)
-		if _valid_openai_spec "$backend"; then
-			_infer_openai "$backend" "$system" "$context" "$outfile"
-		else
-			# Invalid: missing URL and/or model segments
-			echo "ERROR: OpenAI backend requires spec format openai:URL:MODEL" >&2
-			return 1
-		fi
-		;;
-	*)
-		# Unknown backend type
-		echo "ERROR: Invalid backend specification: $backend (expected openai:URL:MODEL)" >&2
-		return 1
-		;;
-	esac
+	_infer_dispatch "$backend" "$system" "$context" "$outfile"
 }
 
 # Usage: _valid_openai_spec <backend_spec>
@@ -162,4 +164,29 @@ _infer_apfel() {
 		apfel -q -s "$system" "$context" 2>/dev/null
 	fi
 	# Exit codes pass through naturally: 3=guardrail, 4=overflow
+}
+
+# Usage: infer_with_backend <backend> <role> <system> <context> [outfile]
+# Invoke infer with explicit backend instead of role-based dispatch
+# Usage: out="$(infer_with_backend "$backend" "$role" "$system" "$context")"
+infer_with_backend() {
+	local backend="$1"
+	local role="$2"
+	local system="$3"
+	local context="$4"
+	local outfile="${5:-}"
+
+	# Mirror temperature injection from backend.bash:infer()
+	local temperature
+	case "$role" in
+	planner | verifier) temperature="${MNTO_TEMP_STRUCTURED:-0.2}" ;;
+	proposer | stitcher) temperature="${MNTO_TEMP_CREATIVE:-0.7}" ;;
+	*)
+		echo "WARNING: unknown role '${role}', defaulting temperature to 0.7" >&2
+		temperature="0.7"
+		;;
+	esac
+	export MNTO_TEMPERATURE="$temperature"
+
+	_infer_dispatch "$backend" "$system" "$context" "$outfile"
 }

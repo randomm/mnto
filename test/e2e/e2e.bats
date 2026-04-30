@@ -64,20 +64,20 @@ source_harness() {
 # ============================================================================
 # Scenario 01: Single-shot routing
 # Goal: Short goal that should bypass harness and use direct mode
-# Signal: is_direct_task returns 0 for short goals
+# Signal: should_use_workflow returns 1 for short goals (direct mode)
 # ============================================================================
 
 @test "scenario_01_single_shot_routing" {
 	source_harness
 
-	# Create a short goal (under DIRECT_THRESHOLD of 300 chars)
+	# Create a short goal (under workflow threshold)
 	local tid="t01"
 	mkdir -p "$BB_DIR/$tid"
 	echo "Summarize: The quick brown fox jumps over the lazy dog." >"$BB_DIR/$tid/g"
 
-	# is_direct_task should return 0 for short goals
-	is_direct_task "$(cat "$BB_DIR/$tid/g")"
-	[ $? -eq 0 ]
+	# should_use_workflow should return 1 for short goals
+	run should_use_workflow "$(cat "$BB_DIR/$tid/g")"
+	[[ $status -eq 1 ]]
 
 	# Verify no status file was created (direct mode path)
 	# In direct mode, parse_plan is not called, so no status file
