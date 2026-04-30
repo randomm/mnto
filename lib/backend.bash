@@ -181,7 +181,10 @@ infer_with_backend() {
 	case "$role" in
 	planner | verifier) temperature="${MNTO_TEMP_STRUCTURED:-0.2}" ;;
 	proposer | stitcher) temperature="${MNTO_TEMP_CREATIVE:-0.7}" ;;
-	*) temperature="0.7" ;;
+	*)
+		echo "WARNING: unknown role '${role}', defaulting temperature to 0.7" >&2
+		temperature="0.7"
+		;;
 	esac
 	export MNTO_TEMPERATURE="$temperature"
 

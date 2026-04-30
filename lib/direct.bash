@@ -10,25 +10,6 @@ if [[ "${_BLACKBOARD_SOURCED:-}" != "1" ]] || [[ "${_BACKEND_SOURCED:-}" != "1" 
 	return 1 2>/dev/null || exit 1
 fi
 
-# Threshold for direct mode: goals shorter than this bypass the harness.
-# Configurable via MNTO_DIRECT_THRESHOLD (default: 300 chars).
-readonly DIRECT_THRESHOLD="${MNTO_DIRECT_THRESHOLD:-300}"
-
-# Check if a goal is simple enough for direct single-shot inference.
-# Usage: is_direct_task "$goal"
-# Returns: 0 if direct mode should be used, 1 if harness should be used.
-is_direct_task() {
-	local goal="$1"
-	local goal_len=${#goal}
-
-	# Short goals don't benefit from decomposition
-	if ((goal_len <= DIRECT_THRESHOLD)); then
-		return 0
-	fi
-
-	return 1
-}
-
 # Determine if goal should use workflow executor.
 # Returns: 0 (use workflow) or 1 (use direct/single-shot)
 # Usage: should_use_workflow <goal>
@@ -41,13 +22,16 @@ should_use_workflow() {
 
 	# Token size heuristic (chars / 4 ≈ tokens)
 	local threshold="${MNTO_WORKFLOW_THRESHOLD:-120000}"
+	# Validate threshold is numeric; fall back to default if not
+	[[ "$threshold" =~ ^[0-9]+$ ]] || threshold=120000
 	local estimated_chars="${#goal}"
 	((estimated_chars > threshold)) && return 0
 
 	# Sequential intent signals
-	echo "$goal" | grep -qiE \
-		'(then|after|followed by|depends on|step [0-9]|first.*then|review.*and)' &&
+	if echo "$goal" | grep -qiE \
+		'(then|after|followed by|depends on|step [0-9]|first.*then|review.*and)'; then
 		return 0
+	fi
 
 	return 1
 }
