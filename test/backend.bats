@@ -214,12 +214,12 @@ mock_apfel_overflow() {
 # Test _infer_apfel with system prompts and context
 @test "_infer_apfel calls apfel with correct arguments without output file" {
 	apfel() {
-		# Should receive exactly 2 args: system and context
-		if [[ $# -eq 2 ]]; then
+		# Receives 4 args: -q, -s, system, context
+		if [[ $# -eq 4 && "$3" == "system prompt" && "$4" == "user context" ]]; then
 			echo "mocked response"
 			return 0
 		else
-			echo "ERROR: wrong arg count $#, expected 2" >&2
+			echo "ERROR: wrong arg count $#, expected 4" >&2
 			return 1
 		fi
 	}
@@ -234,7 +234,7 @@ mock_apfel_overflow() {
 @test "_infer_apfel handles context starting with dash" {
 	apfel() {
 		# Capture arguments to verify safety - context should have leading newline
-		if [[ "$2" == $'\n'* ]]; then
+		if [[ "$4" == $'\n'* ]]; then
 			# Context was properly escaped
 			echo "safe response"
 			return 0
@@ -271,12 +271,12 @@ mock_apfel_overflow() {
 # Test _infer_apfel with output file argument
 @test "_infer_apfel writes to output file when provided" {
 	apfel() {
-		# Uses redirection, receives only 2 positional args: system and context
-		if [[ $# -eq 2 ]]; then
+		# Uses redirection, receives 4 positional args: -q -s system context
+		if [[ $# -eq 4 ]]; then
 			echo "response written to file"
 			return 0
 		else
-			echo "wrong - received $# args, expected 2"
+			echo "wrong - received $# args, expected 4"
 			return 1
 		fi
 	}
@@ -296,12 +296,12 @@ mock_apfel_overflow() {
 
 @test "_infer_apfel uses stdout when no output file provided" {
 	apfel() {
-		# No output file: receives 2 positional args
-		if [[ $# -eq 2 ]]; then
+		# No output file: receives 4 positional args: -q -s system context
+		if [[ $# -eq 4 ]]; then
 			echo "stdout response"
 			return 0
 		else
-			echo "wrong - received $# args, expected 2"
+			echo "wrong - received $# args, expected 4"
 			return 1
 		fi
 	}

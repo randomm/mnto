@@ -29,6 +29,29 @@ is_direct_task() {
 	return 1
 }
 
+# Determine if goal should use workflow executor.
+# Returns: 0 (use workflow) or 1 (use direct/single-shot)
+# Usage: should_use_workflow <goal>
+should_use_workflow() {
+	local goal="$1"
+
+	# Explicit force flags
+	[[ "${MNTO_FORCE_WORKFLOW:-}" == "true" ]] && return 0
+	[[ "${MNTO_FORCE_DIRECT:-}" == "true" ]] && return 1
+
+	# Token size heuristic (chars / 4 ≈ tokens)
+	local threshold="${MNTO_WORKFLOW_THRESHOLD:-120000}"
+	local estimated_chars="${#goal}"
+	((estimated_chars > threshold)) && return 0
+
+	# Sequential intent signals
+	echo "$goal" | grep -qiE \
+		'(then|after|followed by|depends on|step [0-9]|first.*then|review.*and)' &&
+		return 0
+
+	return 1
+}
+
 # Run a task in direct mode: single inference call, no plan/verify/stitch.
 # Usage: run_direct <tid>
 # Reads: .mnto/bb/{tid}/g (goal)

@@ -78,10 +78,17 @@ Commands:
 Options:
   -h, --help            Show this help
   --dry-run             Show actions without executing (also --clean, --prune)
+  --workflow            Force workflow executor (skip direct mode)
+  --direct              Force direct mode (bypass workflow harness)
   --plan-model {url}    Use external model (legacy alias for --proposer)
   --proposer {spec}     Model spec for proposer/planner/stitcher (apfel or openai:URL:MODEL)
   --verifier {spec}     Model spec for verifier (apfel or openai:URL:MODEL)
   --vipune              Enable vipune semantic search integration
+
+Routing:
+  --workflow and --direct override automatic routing.
+  Set MNTO_WORKFLOW_THRESHOLD (default: 120000 chars ≈ 30K tokens) to tune the
+  auto-routing threshold. MNTO_FORCE_WORKFLOW and MNTO_FORCE_DIRECT also work.
 
 Model selection precedence:
   --proposer/--verifier > MNTO_PROPOSER/MNTO_VERIFIER > MNTO_MODEL > apfel
@@ -146,10 +153,10 @@ create_task() {
 	# Save goal
 	echo "$goal" >"$bb_dir/g"
 
-	# Smart routing: short/simple goals bypass the harness entirely.
-	# Research shows single-agent systems outperform multi-agent on
-	# sequential reasoning with matched token budgets.
-	if is_direct_task "$goal"; then
+	# Routing: use direct mode for simple goals, workflow for complex ones.
+	# Auto-routing uses token heuristic, sequential intent signals, and
+	# explicit --workflow/--direct flags override the default behavior.
+	if ! should_use_workflow "$goal"; then
 		if run_direct "$tid"; then
 			echo "Created task: $tid"
 			return 0
@@ -259,6 +266,15 @@ parse_options() {
 			;;
 		--dry-run)
 			DRY_RUN="true"
+			shift
+			;;
+		--workflow)
+			# Note: --workflow takes precedence over --direct if both are specified
+			export MNTO_FORCE_WORKFLOW="true"
+			shift
+			;;
+		--direct)
+			export MNTO_FORCE_DIRECT="true"
 			shift
 			;;
 		--plan-model)
